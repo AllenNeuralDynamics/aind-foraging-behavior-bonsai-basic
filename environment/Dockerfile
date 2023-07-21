@@ -1,4 +1,4 @@
-# hash:sha256:d905163a9c74e62e85630db5eec9fd5264eee31dc4cb08779dad96ec38011a93
+# hash:sha256:1e3693de94598c93b871591c195c3800206d17a70c8d072b153a41f3c549d8d3
 FROM registry.codeocean.allenneuraldynamics.org/codeocean/jupyterlab:3.4.4-miniconda4.12.0-python3.9-ubuntu20.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -14,7 +14,8 @@ RUN pip install -U --no-cache-dir \
     pynwb==2.3.2 \
     seaborn==0.12.2 \
     xarray==2023.4.2 \
-    zarr==2.14.2
+    zarr==2.14.2 \
+    ipykernel
 
 ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
 	
@@ -22,3 +23,6 @@ RUN cd /.code-server \
 	&& tar -xvf code-server.tar.gz \
 	&& rm code-server.tar.gz \
 	&& ln -s /.code-server/code-server-4.9.0-linux-amd64/bin/code-server  /usr/bin/code-server
+
+COPY postInstall /
+RUN /postInstall
