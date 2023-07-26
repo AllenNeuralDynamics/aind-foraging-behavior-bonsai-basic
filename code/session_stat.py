@@ -116,24 +116,26 @@ df_trial_behavior
 df_session_stats
 
 #%%
-def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, bait_Ls=None, bait_Rs=None):  # Calculate foraging efficiency (only for 2lp)
+
+def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):  # Calculate foraging efficiency (only for 2lp)
         
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     for_eff_optimal = reward_rate / np.nanmean(np.max([p_Ls, p_Rs], axis=0))
     
-    if bait_Ls is None:
+    if random_number_L is None:
         return for_eff_optimal, np.nan
         
     # --- Optimal-actual (uses the actual random numbers by simulation)
-    reward_refills = np.vstack([bait_Ls, bait_Rs])
+    reward_refills = np.vstack([p_Ls >= random_number_L, p_Rs >= random_number_R])
     optimal_choices = np.argmax([p_Ls, p_Rs], axis=0)  # Greedy choice, assuming the agent knows the groundtruth
     optimal_rewards = reward_refills[0][optimal_choices==0].sum() + reward_refills[1][optimal_choices==1].sum()
     for_eff_optimal_random_seed = reward_rate / (optimal_rewards / len(optimal_choices))
     
     return for_eff_optimal, for_eff_optimal_random_seed
 
+    
 
-def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, bait_Ls=None, bait_Rs=None):  # Calculate foraging efficiency (only for 2lp)
+def foraging_eff(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):  # Calculate foraging efficiency (only for 2lp)
         
     # --- Optimal-aver (use optimal expectation as 100% efficiency) ---
     p_stars = np.zeros_like(p_Ls)
@@ -148,12 +150,12 @@ def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, bait_Ls=None, bait_Rs=None):  
 
     for_eff_optimal = reward_rate / np.nanmean(p_stars)
     
-    if bait_Ls is None:
+    if random_number_L is None:
         return for_eff_optimal, np.nan
         
     # --- Optimal-actual (uses the actual random numbers by simulation)
     block_trans = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[0].tolist()
-    reward_refills = [bait_Ls, bait_Rs]
+    reward_refills = [p_Ls >= random_number_L, p_Rs >= random_number_R]
     reward_optimal_random_seed = 0
     
     # Generate optimal choice pattern
