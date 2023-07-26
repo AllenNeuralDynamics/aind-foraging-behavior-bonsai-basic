@@ -7,6 +7,17 @@ def moving_average(a, n=3) :
     ret = np.nancumsum(a, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
+
+def plot_session_from_nwb(nwb, **kargs):
+    
+    df_trials = nwb.trials.to_dataframe()
+
+    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
+    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
+    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+    
+    plot_session_lightweight_plotly(choice_history, reward_history, p_reward, smooth_factor=5, 
+                                bait_history=np.vstack([df_trials.bait_left, df_trials.bait_right]))µ
     
 def plot_session_lightweight(choice_history, 
                              reward_history, 
