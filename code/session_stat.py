@@ -61,7 +61,8 @@ def nwb_to_df(nwb):
                                                 names=['type', 'variable'])
 
     # - Compute session-level stats -
-    # TODO: Ideally, all these simple stats could be computed in the GUI and send a copy to the meta session.json file
+    # TODO: Ideally, all these simple stats could be computed in the GUI, and 
+    # the GUI sends a copy to the meta session.json file and to the nwb file as well.
     
     total_trials = len(df_trials)
     finished_trials = np.sum(~np.isnan(choice_history))
@@ -70,6 +71,7 @@ def nwb_to_df(nwb):
     reward_rate = reward_trials / finished_trials
 
     # TODO: add more stats
+    # See code here: https://github.com/AllenNeuralDynamics/map-ephys/blob/7a06a5178cc621638d849457abb003151f7234ea/pipeline/foraging_analysis.py#L70C8-L70C8
     # early_lick_ratio = 
     # double_dipping_ratio = 
     # block_num
@@ -113,7 +115,10 @@ def nwb_to_df(nwb):
     return df_session
 
 
-def process_one_nwb(nwb_file_name, result_folder):
+def process_one_nwb(nwb_file_name, result_root):
+    '''
+    Process one nwb file and save the results to result_folder_root/{subject}_{session_date}/
+    '''
     logging.info(f'{nwb_file_name} processing...')
     
     try:
@@ -121,7 +126,14 @@ def process_one_nwb(nwb_file_name, result_folder):
         nwb = io.read()
         df_session = nwb_to_df(nwb)
         
-        pickle_file_name = result_folder + '/' + nwb_file_name.split('/')[-1].replace('.nwb', '.pkl')
+        # Create folder if not exist
+        subject_id = df_session.index[0][0]
+        session_date = df_session.index[0][1]
+        
+        result_folder = os.path.join(result_root, f'{subject_id}_{session_date}')
+        os.makedirs(result_folder, exist_ok=True)
+        
+        pickle_file_name = result_folder + '/' + f'{subject_id}_{session_date}_session_stat.pkl'
         pd.to_pickle(df_session, pickle_file_name)
         
         logging.info(f'{nwb_file_name} done.')
@@ -137,7 +149,7 @@ def combine_all_dfs(result_folder):
             df = pd.read_pickle(result_folder + '/' + file_name)
             df_all = pd.concat([df_all, df])
             
-    pd.to_pickle(df_all, result_folder + '/all_sessions.pkl')
+    pd.to_pickle(df_all, result_folder + '/df_all_sessions.pkl')
     
     return df_all
 
