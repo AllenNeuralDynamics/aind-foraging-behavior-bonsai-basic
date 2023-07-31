@@ -9,13 +9,14 @@ import logging
 from pynwb import NWBFile, TimeSeries, NWBHDF5IO
 
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
+from plot.foraging_matplotlib import plot_session_lightweight
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 LEFT, RIGHT = 0, 1
 
+#%%
 def nwb_to_df(nwb):
-    #%%
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
@@ -23,7 +24,6 @@ def nwb_to_df(nwb):
     reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
     p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
 
-    #%%
     # -- Session-based table --
     # - Meta data -
     subject_id, session_date, nwb_suffix = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json", 
@@ -115,6 +115,26 @@ def nwb_to_df(nwb):
     return df_session
 
 
+def plot_session_choice_history(nwb):
+    
+    df_trials = nwb.trials.to_dataframe()
+    df_trials['trial'] = df_trials.index + 1 # Add an one-based trial number column
+
+    # Reformat data
+    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
+    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
+    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+
+    # photostim
+    photostim_trials = df_trials.laser_power > 0
+    photostim = [df_trials.trial[photostim_trials], df_trials.laser_power[photostim_trials], []]
+
+    # Plot session
+    fig, ax = plot_session_lightweight([np.array([choice_history]), reward_history, p_reward], photostim=photostim)
+    
+    return fig
+    
+
 def process_one_nwb(nwb_file_name, result_root):
     '''
     Process one nwb file and save the results to result_folder_root/{subject}_{session_date}/
@@ -129,31 +149,47 @@ def process_one_nwb(nwb_file_name, result_root):
         # Create folder if not exist
         subject_id = df_session.index[0][0]
         session_date = df_session.index[0][1]
+        nwb_suffix = df_session.index[0][2]
+        session_id = f'{subject_id}_{session_date}{f"_{nwb_suffix}" if nwb_suffix else ""}'
         
-        result_folder = os.path.join(result_root, f'{subject_id}_{session_date}')
+        result_folder = os.path.join(result_root, session_id)
         os.makedirs(result_folder, exist_ok=True)
         
-        pickle_file_name = result_folder + '/' + f'{subject_id}_{session_date}_session_stat.pkl'
+        # 1. Generate df_session
+        pickle_file_name = result_folder + '/' + f'{session_id}_session_stat.pkl'
         pd.to_pickle(df_session, pickle_file_name)
+        logging.info(f'{nwb_file_name} 1. df_session done.')
         
-        logging.info(f'{nwb_file_name} done.')
+        # TODO: generate more dfs like this
+        
+        # 2. Plot choice history
+        fig = plot_session_choice_history(nwb)
+        fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
+                    bbox_inches='tight')
+        logging.info(f'{nwb_file_name} 2. plot choice history done.')
+        
+        # TODO: generate more plots like this
+        
     except:
         logging.error(f'{nwb_file_name} failed!!')
         
     return
 
-def combine_all_dfs(result_folder):
+def combine_all_dfs_session(result_folder):
     df_all = pd.DataFrame()
-    for file_name in os.listdir(result_folder):
-        if file_name.endswith('.pkl'):
-            df = pd.read_pickle(result_folder + '/' + file_name)
-            df_all = pd.concat([df_all, df])
-            
-    pd.to_pickle(df_all, result_folder + '/df_all_sessions.pkl')
-    
+
+    for root, dirs, files in os.walk(result_folder):  # Look over all subfolders
+        for file_name in files:
+            if file_name.endswith('.pkl'):
+                file_path = os.path.join(root, file_name)
+                df = pd.read_pickle(file_path)
+                df_all = pd.concat([df_all, df])
+
+    pd.to_pickle(df_all, os.path.join(result_folder, 'df_all_sessions.pkl'))
+
     return df_all
 
-
+#%%
 if __name__ == '__main__':
     #%%
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
@@ -171,4 +207,6 @@ if __name__ == '__main__':
     for nwb_file_name in nwb_file_names:
         process_one_nwb(nwb_file_name, result_folder)
         
-    combine_all_dfs(result_folder)
+    combine_all_dfs_session(result_folder)
+
+# %%

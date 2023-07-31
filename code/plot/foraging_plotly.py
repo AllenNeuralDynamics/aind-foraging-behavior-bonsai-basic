@@ -17,7 +17,7 @@ def plot_session_from_nwb(nwb, **kargs):
     p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
     
     plot_session_lightweight_plotly(choice_history, reward_history, p_reward, smooth_factor=5, 
-                                bait_history=np.vstack([df_trials.bait_left, df_trials.bait_right]))µ
+                                bait_history=np.vstack([df_trials.bait_left, df_trials.bait_right]))
     
 def plot_session_lightweight(choice_history, 
                              reward_history, 
