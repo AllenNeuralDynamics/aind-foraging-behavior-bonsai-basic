@@ -44,9 +44,9 @@ def nwb_to_df(nwb):
 
     dict_meta = {
         'rig': rig,
-        'experimenter': nwb.experimenter[0],
+        'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
-        'protocol': nwb.protocol,
+        'task': nwb.protocol,
         'session_start_time': nwb.session_start_time,
         'weight_before_session': weight_before_session,
         'weight_after_session': weight_after_session,
@@ -176,17 +176,44 @@ def process_one_nwb(nwb_file_name, result_root):
         
     return
 
-def combine_all_dfs_session(result_folder):
+
+def add_session_number(df):
+    # Parse and add session number
+    # TODO: figure out how to better deal with more than one nwb files per day per mouse
+    # Now I assign session number to the nwb file that has the largest finished trials, if there are more than one nwb files per day per mouse,
+    # and set other sessions to nan
+    
+    # Sort by subject_id, session_date, and finished_trials
+    df.sort_values(['subject_id', 'session_date', ('session_stats', 'finished_trials')], inplace=True)
+
+    # Define a function to assign session numbers
+    def assign_session_number(group):
+        group['session'] = np.nan
+        unique_dates = group['session_date'].unique()
+        for i, date in enumerate(unique_dates, 1):
+            mask = group['session_date'] == date
+            max_idx = group.loc[mask, ('session_stats', 'finished_trials')].idxmax()
+            group.loc[max_idx, 'session'] = i
+        return group
+
+    # Group by subject_id and apply the function
+    df = df.groupby('subject_id').apply(assign_session_number).reset_index(drop=True)
+    
+    return df
+
+
+def combine_all_df_session(result_folder):
     df_all = pd.DataFrame()
 
     for root, dirs, files in os.walk(result_folder):  # Look over all subfolders
         for file_name in files:
-            if file_name.endswith('.pkl'):
+            if 'session_stat.pkl' in file_name:
                 file_path = os.path.join(root, file_name)
                 df = pd.read_pickle(file_path)
                 df_all = pd.concat([df_all, df])
 
-    pd.to_pickle(df_all, os.path.join(result_folder, 'df_all_sessions.pkl'))
+    df_all = add_session_number(df_all.reset_index()).set_index(['subject_id', 'session_date', 'session', 'nwb_suffix'])
+    pd.to_pickle(df_all, os.path.join(result_folder, 'df_sessions.pkl'))
 
     return df_all
  
@@ -208,9 +235,11 @@ if __name__ == '__main__':
         
     for nwb_file_name in nwb_file_names:
         process_one_nwb(nwb_file_name, result_folder)
-        
-    combine_all_dfs_session(result_folder)
     
+    # Combine all dfs
+    combine_all_df_session(result_folder)
+    
+    # Sync to s3 (using AWS CLI)
     upload_result_to_s3(result_folder + '/', result_folder_s3) # '/' is essential here!
 
 # %%
