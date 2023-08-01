@@ -15,7 +15,9 @@ RUN pip install -U --no-cache-dir \
     seaborn==0.12.2 \
     xarray==2023.4.2 \
     zarr==2.14.2 \
-    ipykernel
+    ipykernel \
+    s3fs \
+    awscli
 
 ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
 	

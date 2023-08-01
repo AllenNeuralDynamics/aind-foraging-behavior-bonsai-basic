@@ -5,11 +5,12 @@ import math
 import re, os
 import glob
 import logging
-
+import s3fs
 from pynwb import NWBFile, TimeSeries, NWBHDF5IO
 
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
 from plot.foraging_matplotlib import plot_session_lightweight
+from util.aws import upload_result_to_s3
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -188,12 +189,13 @@ def combine_all_dfs_session(result_folder):
     pd.to_pickle(df_all, os.path.join(result_folder, 'df_all_sessions.pkl'))
 
     return df_all
-
+ 
+    
 #%%
 if __name__ == '__main__':
-    #%%
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
+    result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
     
     logging.basicConfig(#filename=f"{result_folder}/logfile.log",
                                 level=logging.INFO,
@@ -208,5 +210,7 @@ if __name__ == '__main__':
         process_one_nwb(nwb_file_name, result_folder)
         
     combine_all_dfs_session(result_folder)
+    
+    upload_result_to_s3(result_folder + '/', result_folder_s3) # '/' is essential here!
 
 # %%
