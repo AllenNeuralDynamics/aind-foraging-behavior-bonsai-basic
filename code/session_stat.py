@@ -7,6 +7,9 @@ import glob
 import logging
 import s3fs
 from pynwb import NWBFile, TimeSeries, NWBHDF5IO
+from pathlib import Path
+import json
+from matplotlib import pyplot as plt
 
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
 from plot.foraging_matplotlib import plot_session_lightweight
@@ -134,7 +137,27 @@ def plot_session_choice_history(nwb):
     fig, ax = plot_session_lightweight([np.array([choice_history]), reward_history, p_reward], photostim=photostim)
     
     return fig
-    
+
+
+def log_error_file(file_name, result_root):
+    error_file_path = Path(f'{result_root}/error_files.json')
+
+    # Check if the file exists
+    if error_file_path.exists():
+        # If it exists, read the current list of error files
+        with open(error_file_path, 'r') as file:
+            error_files = json.load(file)
+    else:
+        # If it doesn't exist, start with an empty list
+        error_files = []
+
+    # Append the new file name to the list
+    error_files.append(file_name)
+
+    # Write the updated list back to the JSON file
+    with open(error_file_path, 'w') as file:
+        json.dump(error_files, file, indent=4)
+        
 
 def process_one_nwb(nwb_file_name, result_root):
     '''
@@ -168,12 +191,13 @@ def process_one_nwb(nwb_file_name, result_root):
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
         logging.info(f'{nwb_file_name} 2. plot choice history done.')
+        plt.close(fig)        
         
         # TODO: generate more plots like this
         
     except:
         logging.error(f'{nwb_file_name} failed!!')
-        
+        log_error_file(nwb_file_name, result_root)
     return
 
 
