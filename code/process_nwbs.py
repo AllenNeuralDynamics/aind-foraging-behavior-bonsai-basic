@@ -260,7 +260,6 @@ if __name__ == '__main__':
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
 
     nwb_file_to_process = nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]
-    logging.info(f'{nwb_file_names}')
     logging.info(f'nwb files to process: {nwb_file_to_process}')
 
     for nwb_file_name in nwb_file_to_process:
