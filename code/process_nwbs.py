@@ -248,7 +248,7 @@ if __name__ == '__main__':
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
     
-    logging.basicConfig(filename=f"{result_folder}/{os.getenv(['CO_CAPSULE_ID'][0])}.log",
+    logging.basicConfig(filename=f"{result_folder}/{os.getenv(['HOSTNAME'][0])}.log",
                                 level=logging.INFO,
                                 format='%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
                                 datefmt='%Y-%m-%d %H:%M:%S')
