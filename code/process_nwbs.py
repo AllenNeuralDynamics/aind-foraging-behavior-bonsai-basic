@@ -255,7 +255,7 @@ if __name__ == '__main__':
 
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
-    nwb_file_names = glob.glob(f'{data_folder}/*.nwb')
+    nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
 
