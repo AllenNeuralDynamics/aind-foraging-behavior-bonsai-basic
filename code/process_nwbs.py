@@ -260,10 +260,10 @@ if __name__ == '__main__':
     for nwb_file_name in nwb_file_names:
         process_one_nwb(nwb_file_name, result_folder)
     
-    # Combine all dfs
-    combine_all_df_session(result_folder)
+    # # Combine all dfs
+    # combine_all_df_session(result_folder)
     
-    # Sync to s3 (using AWS CLI)
-    upload_result_to_s3(result_folder + '/', result_folder_s3) # '/' is essential here!
+    # # Sync to s3 (using AWS CLI)
+    # upload_result_to_s3(result_folder + '/', result_folder_s3) # '/' is essential here!
 
 # %%
