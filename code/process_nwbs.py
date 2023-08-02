@@ -248,7 +248,7 @@ if __name__ == '__main__':
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
     
-    logging.basicConfig(#filename=f"{result_folder}/logfile.log",
+    logging.basicConfig(filename=f"{result_folder}/{os.getenv(['CO_CAPSULE_ID'][0])}.log",
                                 level=logging.INFO,
                                 format='%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
                                 datefmt='%Y-%m-%d %H:%M:%S')
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
 
     nwb_file_to_process = nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]
-    print(nwb_file_to_process)
+    logging.info(f'nwb files to process: {nwb_file_to_process}')
 
     for nwb_file_name in nwb_file_to_process:
         process_one_nwb(nwb_file_name, result_folder)
