@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import math
-import re, os
+import re, os, sys
 import glob
 import logging
 import s3fs
@@ -256,8 +256,10 @@ if __name__ == '__main__':
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/*.nwb')
+
+    if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
         
-    for nwb_file_name in nwb_file_names:
+    for nwb_file_name in nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]:
         process_one_nwb(nwb_file_name, result_folder)
     
     # # Combine all dfs
