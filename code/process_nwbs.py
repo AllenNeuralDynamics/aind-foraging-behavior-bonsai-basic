@@ -258,8 +258,11 @@ if __name__ == '__main__':
     nwb_file_names = glob.glob(f'{data_folder}/*.nwb')
 
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
-        
-    for nwb_file_name in nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]:
+
+    nwb_file_to_process = nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]
+    print(nwb_file_to_process)
+
+    for nwb_file_name in nwb_file_to_process:
         process_one_nwb(nwb_file_name, result_folder)
     
     # # Combine all dfs
