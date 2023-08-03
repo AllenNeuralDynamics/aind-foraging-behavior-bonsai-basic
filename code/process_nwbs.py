@@ -198,6 +198,31 @@ def process_one_nwb(nwb_file_name, result_root):
         logging.error(f'{nwb_file_name} failed!!')
         log_error_file(nwb_file_name, result_root)
     return
+
+
+def add_session_number(df):
+    # Parse and add session number
+    # TODO: figure out how to better deal with more than one nwb files per day per mouse
+    # Now I assign session number to the nwb file that has the largest finished trials, if there are more than one nwb files per day per mouse,
+    # and set other sessions to nan
+    
+    # Sort by subject_id, session_date, and finished_trials
+    df.sort_values(['subject_id', 'session_date', ('session_stats', 'finished_trials')], inplace=True)
+
+    # Define a function to assign session numbers
+    def assign_session_number(group):
+        group['session'] = np.nan
+        unique_dates = group['session_date'].unique()
+        for i, date in enumerate(unique_dates, 1):
+            mask = group['session_date'] == date
+            max_idx = group.loc[mask, ('session_stats', 'finished_trials')].idxmax()
+            group.loc[max_idx, 'session'] = i
+        return group
+
+    # Group by subject_id and apply the function
+    df = df.groupby('subject_id').apply(assign_session_number).reset_index(drop=True)
+    
+    return df
  
     
 #%%
@@ -206,7 +231,7 @@ if __name__ == '__main__':
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
     
-    logging.basicConfig(filename=f"{result_folder}/{os.getenv(['HOSTNAME'][0])}.log",
+    logging.basicConfig(filename=f"{result_folder}/capsule.log",
                                 level=logging.INFO,
                                 format='%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
                                 datefmt='%Y-%m-%d %H:%M:%S')
