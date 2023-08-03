@@ -13,7 +13,6 @@ from matplotlib import pyplot as plt
 
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
 from plot.foraging_matplotlib import plot_session_lightweight
-from util.aws import upload_result_to_s3
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -224,22 +223,6 @@ def add_session_number(df):
     df = df.groupby('subject_id').apply(assign_session_number).reset_index(drop=True)
     
     return df
-
-
-def combine_all_df_session(result_folder):
-    df_all = pd.DataFrame()
-
-    for root, dirs, files in os.walk(result_folder):  # Look over all subfolders
-        for file_name in files:
-            if 'session_stat.pkl' in file_name:
-                file_path = os.path.join(root, file_name)
-                df = pd.read_pickle(file_path)
-                df_all = pd.concat([df_all, df])
-
-    df_all = add_session_number(df_all.reset_index()).set_index(['subject_id', 'session_date', 'session', 'nwb_suffix'])
-    pd.to_pickle(df_all, os.path.join(result_folder, 'df_sessions.pkl'))
-
-    return df_all
  
     
 #%%
@@ -265,10 +248,5 @@ if __name__ == '__main__':
     for nwb_file_name in nwb_file_to_process:
         process_one_nwb(nwb_file_name, result_folder)
     
-    # # Combine all dfs
-    # combine_all_df_session(result_folder)
-    
-    # # Sync to s3 (using AWS CLI)
-    # upload_result_to_s3(result_folder + '/', result_folder_s3) # '/' is essential here!
 
 # %%
