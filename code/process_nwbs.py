@@ -29,7 +29,8 @@ def nwb_to_df(nwb):
 
     # -- Session-based table --
     # - Meta data -
-    session_start_time = nwb.session_start_time
+    session_start_time_from_meta = nwb.session_start_time
+    subject_id_from_meta = nwb.subject.subject_id
     
     # old file name foramt before commit https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551
     old_re = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json", 
@@ -43,16 +44,17 @@ def nwb_to_df(nwb):
     else:
         # After https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551, 
         # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix, which still keeps the order as before.
-        subject_id = nwb.subject.subject_id
-        session_date = session_start_time.strftime("%Y-%m-%d")
-        
+
         # Typical situation for multiple bonsai sessions per day is that the RAs pressed more than once 
         # "Save" button but only started the session once. 
         # Therefore, I should generate nwb_suffix from the bonsai file name instead of session_start_time.
-        session_save_time = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json", 
-                            nwb.session_id).groups()[-1]
-        nwb_suffix = int(session_save_time.replace('-', ''))
+        subject_id, session_date, session_json_time = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json", 
+                            nwb.session_id).groups()
+        nwb_suffix = int(session_json_time.replace('-', ''))
         
+    assert subject_id == subject_id_from_meta, "Subject name from the metadata does not match that from json name!!"
+    assert session_date == session_start_time_from_meta.strftime("%Y-%m-%d"), "Session date from the metadata does not match that from json name!!"
+    
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
@@ -70,7 +72,7 @@ def nwb_to_df(nwb):
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
-        'session_start_time': session_start_time,
+        'session_start_time': session_start_time_from_meta,
         'weight_before_session': weight_before_session,
         'weight_after_session': weight_after_session,
         'water_during_session': weight_after_session - weight_before_session,
@@ -262,7 +264,7 @@ if __name__ == '__main__':
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
-    to_debug = '684041_2023-11-13_13-42-31.nwb'  # During debugging, only process this file
+    to_debug = '000002_2023-11-08_10-26-01.nwb'  # During debugging, only process this file
 
     if not if_pipeline_mode:
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
