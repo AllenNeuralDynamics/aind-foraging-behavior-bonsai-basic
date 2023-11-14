@@ -45,7 +45,13 @@ def nwb_to_df(nwb):
         # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix, which still keeps the order as before.
         subject_id = nwb.subject.subject_id
         session_date = session_start_time.strftime("%Y-%m-%d")
-        nwb_suffix = int(nwb.session_start_time.strftime("%H%M%S"))
+        
+        # Typical situation for multiple bonsai sessions per day is that the RAs pressed more than once 
+        # "Save" button but only started the session once. 
+        # Therefore, I should generate nwb_suffix from the bonsai file name instead of session_start_time.
+        session_save_time = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json", 
+                            nwb.session_id).groups()[-1]
+        nwb_suffix = int(session_save_time.replace('-', ''))
         
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
