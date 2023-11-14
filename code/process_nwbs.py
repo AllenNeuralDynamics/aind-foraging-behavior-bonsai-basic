@@ -266,7 +266,7 @@ if __name__ == '__main__':
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
-    if_debug_mode = len(sys.argv) == 0 # In pipeline, add any argument to trigger pipeline mode.
+    if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
         to_debug = '000002_2023-11-08_10-26-01.nwb'  # During debugging, only process this file
