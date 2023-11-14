@@ -29,9 +29,24 @@ def nwb_to_df(nwb):
 
     # -- Session-based table --
     # - Meta data -
-    subject_id, session_date, nwb_suffix = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json", 
-                                        nwb.session_id).groups()
-    nwb_suffix = int(nwb_suffix) if nwb_suffix is not None else 0
+    session_start_time = nwb.session_start_time
+    
+    # old file name foramt before commit https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551
+    old_re = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json", 
+                nwb.session_id)
+    
+    if old_re is not None:
+        # If there are more than one "bonsai sessions" (the trainer clicked "Save" button in the GUI more than once) in a certain day,
+        # parse nwb_suffix from the file name (0, 1, 2, ...)
+        subject_id, session_date, nwb_suffix = old_re.groups()
+        nwb_suffix = int(nwb_suffix) if nwb_suffix is not None else 0
+    else:
+        # After https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551, 
+        # the suffix becomes the session start time. Therefore, I use HHMMSS as the nwb suffix, which still keeps the order as before.
+        subject_id = nwb.subject.subject_id
+        session_date = session_start_time.strftime("%Y-%m-%d")
+        nwb_suffix = int(nwb.session_start_time.strftime("%H%M%S"))
+        
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
@@ -49,7 +64,7 @@ def nwb_to_df(nwb):
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
-        'session_start_time': nwb.session_start_time,
+        'session_start_time': session_start_time,
         'weight_before_session': weight_before_session,
         'weight_after_session': weight_after_session,
         'water_during_session': weight_after_session - weight_before_session,
@@ -194,8 +209,8 @@ def process_one_nwb(nwb_file_name, result_root):
         
         # TODO: generate more plots like this
         
-    except:
-        logging.error(f'{nwb_file_name} failed!!')
+    except Exception as e:
+        logging.error(f'{nwb_file_name} failed!!', exc_info=True)
         log_error_file(nwb_file_name, result_root)
     return
 
@@ -241,8 +256,11 @@ if __name__ == '__main__':
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
+    to_debug = '684041_2023-11-13_13-42-31.nwb'  # During debugging, only process this file
 
-    nwb_file_to_process = nwb_file_names[: len(nwb_file_names) if if_pipeline_mode else 1]
+    if not if_pipeline_mode:
+        nwb_file_to_process = [f for f in nwb_file_names if to_debug in f]
+    
     logging.info(f'nwb files to process: {nwb_file_to_process}')
 
     for nwb_file_name in nwb_file_to_process:
