@@ -30,6 +30,7 @@ def nwb_to_df(nwb):
     # -- Session-based table --
     # - Meta data -
     session_start_time_from_meta = nwb.session_start_time
+    session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
     
     # old file name foramt before commit https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551
@@ -52,8 +53,10 @@ def nwb_to_df(nwb):
                             nwb.session_id).groups()
         nwb_suffix = int(session_json_time.replace('-', ''))
         
-    assert subject_id == subject_id_from_meta, "Subject name from the metadata does not match that from json name!!"
-    assert session_date == session_start_time_from_meta.strftime("%Y-%m-%d"), "Session date from the metadata does not match that from json name!!"
+    assert subject_id == subject_id_from_meta, f"Subject name from the metadata ({subject_id_from_meta}) does not match "\
+                                               f"that from json name ({subject_id})!!"
+    assert session_date == session_date_from_meta, f"Session date from the metadata ({session_date_from_meta}) does not match "\
+                                                   f"that from json name ({session_date})!!"
     
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
@@ -263,10 +266,10 @@ if __name__ == '__main__':
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
-    if_pipeline_mode = len(sys.argv) > 1 # In pipeline, add any argument to trigger pipeline mode.
-    to_debug = '000002_2023-11-08_10-26-01.nwb'  # During debugging, only process this file
+    if_debug_mode = len(sys.argv) == 0 # In pipeline, add any argument to trigger pipeline mode.
 
-    if not if_pipeline_mode:
+    if if_debug_mode:
+        to_debug = '000002_2023-11-08_10-26-01.nwb'  # During debugging, only process this file
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logging.info(f'nwb files to process: {nwb_file_names}')
