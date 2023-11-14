@@ -259,11 +259,11 @@ if __name__ == '__main__':
     to_debug = '684041_2023-11-13_13-42-31.nwb'  # During debugging, only process this file
 
     if not if_pipeline_mode:
-        nwb_file_to_process = [f for f in nwb_file_names if to_debug in f]
+        nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
-    logging.info(f'nwb files to process: {nwb_file_to_process}')
+    logging.info(f'nwb files to process: {nwb_file_names}')
 
-    for nwb_file_name in nwb_file_to_process:
+    for nwb_file_name in nwb_file_names:
         process_one_nwb(nwb_file_name, result_folder)
     
 
