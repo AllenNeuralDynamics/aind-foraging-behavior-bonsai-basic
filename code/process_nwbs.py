@@ -53,6 +53,10 @@ def nwb_to_df(nwb):
                             nwb.session_id).groups()
         nwb_suffix = int(session_json_time.replace('-', ''))
         
+    # Ad-hoc bug fixes for some mistyped mouse ID
+    if subject_id in ("689727"):
+        subject_id_from_meta = subject_id
+        
     assert subject_id == subject_id_from_meta, f"Subject name from the metadata ({subject_id_from_meta}) does not match "\
                                                f"that from json name ({subject_id})!!"
     assert session_date == session_date_from_meta, f"Session date from the metadata ({session_date_from_meta}) does not match "\
@@ -269,7 +273,7 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
-        to_debug = '000002_2023-11-08_10-26-01.nwb'  # During debugging, only process this file
+        to_debug = '689727_2023-11-22_11-19-53.nwb'  # During debugging, only process this file
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logging.info(f'nwb files to process: {nwb_file_names}')
