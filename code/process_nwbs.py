@@ -67,7 +67,7 @@ def nwb_to_df(nwb):
 
     # Parse meta info
     # TODO: when generating nwb, put meta info in nwb.scratch and get rid of the regular expression
-    extra_water, rig = re.search(r"Give extra water.*:(\d*(?:\.\d+)?)? .*tower:(.*)?", nwb.session_description).groups()
+    extra_water, rig = re.search(r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?", nwb.session_description).groups()
     weight_after_session = re.search(r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description).groups()[0]
     
     extra_water = float(extra_water) if extra_water !='' else 0
@@ -135,13 +135,33 @@ def nwb_to_df(nwb):
         
         # TODO: add more stats here
     }
-
+        
     # Generate df_session_stat
     df_session_stat = pd.DataFrame(dict_session_stat, 
-                                index=session_index)
+                                   index=session_index)
     df_session_stat.columns = pd.MultiIndex.from_product([['session_stats'], dict_session_stat.keys()],
                                                         names=['type', 'variable'])
 
+    # -- Add automatic training --
+    if 'auto_train_engaged' in df_trials.columns:       
+        df_session['auto_train', 'curriculum_name'] = df_trials.auto_train_curriculum_name.mode()
+        df_session['auto_train', 'curriculum_version'] = df_trials.auto_train_curriculum_version.mode()
+        df_session['auto_train', 'curriculum_schema_version'] = df_trials.auto_train_curriculum_schema_version.mode()
+        df_session['auto_train', 'current_stage_actual'] = df_trials.auto_train_stage.mode()
+        df_session['auto_train', 'if_overriden_by_trainer'] = df_trials.auto_train_stage_overridden.mode()
+        
+        # Add a flag to indicate whether any of the auto train settings were changed during the training
+        df_session['auto_train', 'if_consistent_within_session'] = len(df_trials.groupby(
+            [col for col in df_trials.columns if 'auto_train' in col]
+        )) == 1
+    else:
+        for field in ['curriculum_name', 
+                      'curriculum_version', 
+                      'curriculum_schema_version', 
+                      'current_stage_actual', 
+                      'if_overriden_by_trainer']:
+            df_session['auto_train', field] = None
+                
     # -- Merge to df_session --
     df_session = pd.concat([df_session, df_session_stat], axis=1)
 
@@ -273,7 +293,7 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
-        to_debug = '689727_2023-11-22_11-19-53.nwb'  # During debugging, only process this file
+        to_debug = '702204_2024-01-23_11-16-04.nwb'  # During debugging, only process this file
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logging.info(f'nwb files to process: {nwb_file_names}')
