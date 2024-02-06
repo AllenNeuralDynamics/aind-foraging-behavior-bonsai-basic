@@ -144,11 +144,11 @@ def nwb_to_df(nwb):
 
     # -- Add automatic training --
     if 'auto_train_engaged' in df_trials.columns:       
-        df_session['auto_train', 'curriculum_name'] = df_trials.auto_train_curriculum_name.mode()[0]
-        df_session['auto_train', 'curriculum_version'] = df_trials.auto_train_curriculum_version.mode()[0]
-        df_session['auto_train', 'curriculum_schema_version'] = df_trials.auto_train_curriculum_schema_version.mode()[0]
-        df_session['auto_train', 'current_stage_actual'] = df_trials.auto_train_stage.mode()[0]
-        df_session['auto_train', 'if_overriden_by_trainer'] = df_trials.auto_train_stage_overridden.mode()[0]
+        df_session['auto_train', 'curriculum_name'] = np.nan if df_trials.auto_train_curriculum_name.mode()[0] == 'none' else df_trials.auto_train_curriculum_name.mode()[0]
+        df_session['auto_train', 'curriculum_version'] = np.nan if df_trials.auto_train_curriculum_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_version.mode()[0]
+        df_session['auto_train', 'curriculum_schema_version'] = np.nan if df_trials.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_schema_version.mode()[0]
+        df_session['auto_train', 'current_stage_actual'] = np.nan if df_trials.auto_train_stage.mode()[0] == 'none' else df_trials.auto_train_stage.mode()[0]
+        df_session['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trials.auto_train_stage_overridden.isna()) else df_trials.auto_train_stage_overridden.mode()[0]
         
         # Add a flag to indicate whether any of the auto train settings were changed during the training
         df_session['auto_train', 'if_consistent_within_session'] = len(df_trials.groupby(
