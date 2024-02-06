@@ -144,11 +144,11 @@ def nwb_to_df(nwb):
 
     # -- Add automatic training --
     if 'auto_train_engaged' in df_trials.columns:       
-        df_session['auto_train', 'curriculum_name'] = df_trials.auto_train_curriculum_name.mode()
-        df_session['auto_train', 'curriculum_version'] = df_trials.auto_train_curriculum_version.mode()
-        df_session['auto_train', 'curriculum_schema_version'] = df_trials.auto_train_curriculum_schema_version.mode()
-        df_session['auto_train', 'current_stage_actual'] = df_trials.auto_train_stage.mode()
-        df_session['auto_train', 'if_overriden_by_trainer'] = df_trials.auto_train_stage_overridden.mode()
+        df_session['auto_train', 'curriculum_name'] = df_trials.auto_train_curriculum_name.mode()[0]
+        df_session['auto_train', 'curriculum_version'] = df_trials.auto_train_curriculum_version.mode()[0]
+        df_session['auto_train', 'curriculum_schema_version'] = df_trials.auto_train_curriculum_schema_version.mode()[0]
+        df_session['auto_train', 'current_stage_actual'] = df_trials.auto_train_stage.mode()[0]
+        df_session['auto_train', 'if_overriden_by_trainer'] = df_trials.auto_train_stage_overridden.mode()[0]
         
         # Add a flag to indicate whether any of the auto train settings were changed during the training
         df_session['auto_train', 'if_consistent_within_session'] = len(df_trials.groupby(
@@ -293,7 +293,7 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
-        to_debug = '702204_2024-01-23_11-16-04.nwb'  # During debugging, only process this file
+        to_debug = '703548_2024-02-05_08-11-00.nwb'  # During debugging, only process this file
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logging.info(f'nwb files to process: {nwb_file_names}')
