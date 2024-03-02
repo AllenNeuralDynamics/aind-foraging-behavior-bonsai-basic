@@ -66,14 +66,7 @@ def nwb_to_df(nwb):
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
-    # Parse meta info
-    extra_water, rig = re.search(r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?", nwb.session_description).groups()
-    weight_after_session = re.search(r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description).groups()[0]
-    
-    extra_water = float(extra_water) if extra_water !='' else 0
-    weight_after_session = float(weight_after_session) if weight_after_session != '' else np.nan
-    weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != '' else np.nan
-    
+    # Parse meta info   
     meta_dict = nwb.scratch['metadata'].to_dataframe().iloc[0].to_dict()
 
     dict_meta = {
@@ -82,9 +75,12 @@ def nwb_to_df(nwb):
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
         'session_start_time': session_start_time_from_meta,
-        'weight_after_session': meta_dict['weight_after'],
-        'water_during_session': weight_after_session - weight_before_session,
-        'water_extra': extra_water
+        
+        **{key: value for key, value in meta_dict.items() 
+           if key not in ['box' ,
+                          # There are bugs in computing foraging eff online. Let's recalculate later.
+                          'foraging_efficiency', 'foraging_efficiency_with_actual_random_seed']  
+           }
         }
 
     df_session = pd.DataFrame(dict_meta, 
