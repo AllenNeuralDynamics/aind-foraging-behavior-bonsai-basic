@@ -26,6 +26,7 @@ def nwb_to_df(nwb):
     choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
     reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
     p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+    reward_random_number = np.vstack([df_trials.reward_random_number_left, df_trials.reward_random_number_right])
 
     # -- Session-based table --
     # - Meta data -
@@ -66,22 +67,22 @@ def nwb_to_df(nwb):
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
     # Parse meta info
-    # TODO: when generating nwb, put meta info in nwb.scratch and get rid of the regular expression
     extra_water, rig = re.search(r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?", nwb.session_description).groups()
     weight_after_session = re.search(r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description).groups()[0]
     
     extra_water = float(extra_water) if extra_water !='' else 0
     weight_after_session = float(weight_after_session) if weight_after_session != '' else np.nan
     weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != '' else np.nan
+    
+    meta_dict = nwb.scratch['metadata'].to_dataframe().iloc[0].to_dict()
 
     dict_meta = {
-        'rig': rig,
+        'rig': meta_dict['box'],
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
         'session_start_time': session_start_time_from_meta,
-        'weight_before_session': weight_before_session,
-        'weight_after_session': weight_after_session,
+        'weight_after_session': meta_dict['weight_after'],
         'water_during_session': weight_after_session - weight_before_session,
         'water_extra': extra_water
         }
@@ -121,7 +122,10 @@ def nwb_to_df(nwb):
 
 
     foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
-    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate, p_reward[LEFT,:], p_reward[RIGHT, :])
+    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate, 
+                                                               p_reward[LEFT,:], p_reward[RIGHT, :], 
+                                                               reward_random_number[LEFT, :], reward_random_number[RIGHT, :]
+                                                               )
 
     # -- Add session stats here --
     dict_session_stat = {
