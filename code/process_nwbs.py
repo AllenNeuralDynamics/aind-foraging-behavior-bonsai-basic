@@ -95,11 +95,18 @@ def nwb_to_df(nwb):
     # TODO: Ideally, all these simple stats could be computed in the GUI, and 
     # the GUI sends a copy to the meta session.json file and to the nwb file as well.
     
-    total_trials = len(df_trials)
-    finished_trials = np.sum(~np.isnan(choice_history))
-    reward_trials = np.sum(reward_history)
-
-    reward_rate = reward_trials / finished_trials
+    n_total_trials = len(df_trials)
+    n_finished_trials = np.sum(~np.isnan(choice_history))
+    
+    # Actual foraging trials (autowater excluded)
+    _non_autowater_trials = (df_trials.auto_waterL==0) & (df_trials.auto_waterR==0)
+    _non_autowater_finished_trials = _non_autowater_trials & ~np.isnan(choice_history)
+    n_total_trials_non_autowater = np.sum(_non_autowater_trials)
+    n_finished_trials_non_autowater = np.sum(_non_autowater_finished_trials)
+    
+    # Reward trials only include non-autowater trials
+    n_reward_trials_non_autowater = np.sum(reward_history)  # Note that reward history only include non-autowater trials
+    reward_rate_non_autowater = n_reward_trials_non_autowater / n_finished_trials_non_autowater
 
     # TODO: add more stats
     # See code here: https://github.com/AllenNeuralDynamics/map-ephys/blob/7a06a5178cc621638d849457abb003151f7234ea/pipeline/foraging_analysis.py#L70C8-L70C8
@@ -117,22 +124,32 @@ def nwb_to_df(nwb):
     # mean_reward_contrast 
     # ...
 
-
+    # Foraging efficiency (autowater and ignored trials must be excluded)
     foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
-    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate, 
-                                                               p_reward[LEFT,:], p_reward[RIGHT, :], 
-                                                               reward_random_number[LEFT, :], reward_random_number[RIGHT, :]
+    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater, 
+                                                               p_reward[LEFT, _non_autowater_finished_trials], 
+                                                               p_reward[RIGHT, _non_autowater_finished_trials], 
+                                                               reward_random_number[LEFT, _non_autowater_finished_trials], 
+                                                               reward_random_number[RIGHT, _non_autowater_finished_trials]
                                                                )
 
     # -- Add session stats here --
     dict_session_stat = {
-        'total_trials': total_trials,
-        'finished_trials': finished_trials,
-        'finished_rate': finished_trials / total_trials,
-        'ignore_rate': np.sum(np.isnan(choice_history)) / total_trials,
-        'reward_trials': reward_trials,
-        'reward_rate': reward_rate,
+        'total_trials': n_total_trials,
+        'finished_trials': n_finished_trials,
+        'finished_rate': n_finished_trials / n_total_trials,
+        'finished_trials_non_autowater': n_finished_trials_non_autowater,
+        'finished_rate_non_autowater': n_finished_trials_non_autowater / n_total_trials_non_autowater,
+        
+        'ignore_rate': np.sum(np.isnan(choice_history)) / n_total_trials,
+        'ignore_rate_non_autowater': np.sum(np.isnan(choice_history[_non_autowater_trials])) / n_total_trials_non_autowater,
+        
+        'reward_trials_non_autowater': n_reward_trials_non_autowater,
+        'reward_rate_non_autowater': reward_rate_non_autowater,
+        
+        # Autowater is excluded by default in foraging efficiency calculation
         'foraging_eff': foraging_eff,
+        'foraging_eff_random_seed': foraging_eff_random_seed,
         
         # TODO: add more stats here
     }
