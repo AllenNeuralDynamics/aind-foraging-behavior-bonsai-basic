@@ -74,13 +74,14 @@ def nwb_to_df(nwb):
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
+        'notes': nwb.notes,
         'session_start_time': session_start_time_from_meta,
         
         **{key: value for key, value in meta_dict.items() 
            if key not in ['box' ,
                           # There are bugs in computing foraging eff online. Let's recalculate later.
                           'foraging_efficiency', 'foraging_efficiency_with_actual_random_seed']  
-           }
+           },
         }
 
     df_session = pd.DataFrame(dict_meta, 
