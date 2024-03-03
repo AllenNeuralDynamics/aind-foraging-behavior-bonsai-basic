@@ -19,7 +19,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 LEFT, RIGHT = 0, 1
 
 #%%
-def nwb_to_df(nwb):
+def nwb_to_df_session(nwb):
     df_trials = nwb.trials.to_dataframe()
 
     # Reformat data
@@ -108,11 +108,19 @@ def nwb_to_df(nwb):
     n_reward_trials_non_autowater = np.sum(reward_history)  # Note that reward history only include non-autowater trials
     reward_rate_non_autowater = n_reward_trials_non_autowater / n_finished_trials_non_autowater
 
+    # Foraging efficiency (autowater and ignored trials must be excluded)
+    foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
+    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater, 
+                                                               p_reward[LEFT, _non_autowater_finished_trials], 
+                                                               p_reward[RIGHT, _non_autowater_finished_trials], 
+                                                               reward_random_number[LEFT, _non_autowater_finished_trials], 
+                                                               reward_random_number[RIGHT, _non_autowater_finished_trials]
+                                                               )
+
     # TODO: add more stats
     # See code here: https://github.com/AllenNeuralDynamics/map-ephys/blob/7a06a5178cc621638d849457abb003151f7234ea/pipeline/foraging_analysis.py#L70C8-L70C8
     # early_lick_ratio = 
     # double_dipping_ratio = 
-    # block_num
     # mean_block_length
     # mean_reward_sum
     # mean_reward_contrast
@@ -123,15 +131,11 @@ def nwb_to_df(nwb):
     # mean_reward_sum
     # mean_reward_contrast 
     # ...
-
-    # Foraging efficiency (autowater and ignored trials must be excluded)
-    foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
-    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater, 
-                                                               p_reward[LEFT, _non_autowater_finished_trials], 
-                                                               p_reward[RIGHT, _non_autowater_finished_trials], 
-                                                               reward_random_number[LEFT, _non_autowater_finished_trials], 
-                                                               reward_random_number[RIGHT, _non_autowater_finished_trials]
-                                                               )
+    
+    # Naive bias (Bari et al) (autowater excluded)
+    n_left = np.sum(choice_history[_non_autowater_trials] == LEFT)
+    n_right = np.sum(choice_history[_non_autowater_trials] == RIGHT)
+    bias_naive = 2 * (n_right / (n_left + n_right) - 0.5)
 
     # -- Add session stats here --
     dict_session_stat = {
@@ -148,6 +152,7 @@ def nwb_to_df(nwb):
         'reward_rate_non_autowater': reward_rate_non_autowater,
         
         # Autowater is excluded by default in foraging efficiency calculation
+        'bias_naive': bias_naive,
         'foraging_eff': foraging_eff,
         'foraging_eff_random_seed': foraging_eff_random_seed,
         
@@ -235,7 +240,7 @@ def process_one_nwb(nwb_file_name, result_root):
     try:
         io = NWBHDF5IO(nwb_file_name, mode='r')
         nwb = io.read()
-        df_session = nwb_to_df(nwb)
+        df_session = nwb_to_df_session(nwb)
         
         # Create folder if not exist
         subject_id = df_session.index[0][0]
