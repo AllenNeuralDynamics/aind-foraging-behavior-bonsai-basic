@@ -138,18 +138,21 @@ def nwb_to_df_session(nwb):
     bias_naive = 2 * (n_right / (n_left + n_right) - 0.5)
 
     # -- Add session stats here --
+    # By default, autowater are excluded in all sessions stats
+    # Only those with "_with_autowater" suffix include autowater trials
     dict_session_stat = {
-        'total_trials': n_total_trials,
-        'finished_trials': n_finished_trials,
-        'finished_rate': n_finished_trials / n_total_trials,
-        'finished_trials_non_autowater': n_finished_trials_non_autowater,
-        'finished_rate_non_autowater': n_finished_trials_non_autowater / n_total_trials_non_autowater,
+        'total_trials_with_autowater': n_total_trials,
+        'finished_trials_with_autowater': n_finished_trials,
+        'finished_rate_with_autowater': n_finished_trials / n_total_trials,
+        'ignore_rate_with_autowater': np.sum(np.isnan(choice_history)) / n_total_trials,
         
-        'ignore_rate': np.sum(np.isnan(choice_history)) / n_total_trials,
-        'ignore_rate_non_autowater': np.sum(np.isnan(choice_history[_non_autowater_trials])) / n_total_trials_non_autowater,
+        'total_trials': n_total_trials_non_autowater,
+        'finished_trials': n_finished_trials_non_autowater,
+        'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater,
+        'ignore_rate': np.sum(np.isnan(choice_history[_non_autowater_trials])) / n_total_trials_non_autowater,
         
-        'reward_trials_non_autowater': n_reward_trials_non_autowater,
-        'reward_rate_non_autowater': reward_rate_non_autowater,
+        'reward_trials': n_reward_trials_non_autowater,
+        'reward_rate': reward_rate_non_autowater,
         
         # Autowater is excluded by default in foraging efficiency calculation
         'bias_naive': bias_naive,
