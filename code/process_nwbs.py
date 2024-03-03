@@ -105,13 +105,16 @@ def nwb_to_df_session(nwb):
     n_finished_trials_non_autowater = np.sum(non_autowater_finished_trials)
     
     # Add some columns to df_trials for convenience
-    df_trials['reward'] = False  # All reward, including autowater
-    df_trials.loc[(reward_history.sum(axis=0) | df_trials.auto_waterR | df_trials.auto_waterL) > 0, 'reward'] = True
-    df_trials['reward_non_autowater'] = False  # Only reward from non-autowater trials
+    df_trials['reward'] = False  # All reward, including (collected!) autowater
+    df_trials.loc[(reward_history.sum(axis=0) | 
+                   ((df_trials.auto_waterR | df_trials.auto_waterL) 
+                    & (df_trials.animal_response != IGNORE))  # because there may be "ignored" autowater...
+                   ) > 0, 'reward'] = True
+    df_trials['reward_non_autowater'] = False  # Only reward from non-autowater trials (by definition, animal must not have ignored)
     df_trials.loc[reward_history.sum(axis=0) > 0, 'reward_non_autowater'] = True
     
     df_trials['non_autowater_trial'] = False
-    df_trials.loc[non_autowater_trials, 'non_autowater_trials'] = True
+    df_trials.loc[non_autowater_trials, 'non_autowater_trial'] = True
     df_trials['non_autowater_finished_trial'] = False
     df_trials.loc[non_autowater_finished_trials, 'non_autowater_finished_trial'] = True
     
@@ -256,11 +259,11 @@ def nwb_to_df_session(nwb):
             (len(all_right_licks) + len(all_left_licks) - df_trials.loc[:, 'n_lick_all_gocue_stop'].sum())
             / (len(all_right_licks) + len(all_left_licks)),
             
-        # 4. Lick consistency (during the response period, in finished trials only)
+        # 4. Lick consistency (during the response period, in finished trials only, including autowater)
         'double_dipping_rate_finished_trials':  # In finished trials, the proportion of trials with licks on both sides 
             (df_trials.loc[(df_trials.animal_response != IGNORE), 'n_lick_switches_gocue_stop'] > 0).sum() 
             / (df_trials.animal_response != IGNORE).sum(),
-        'double_dipping_rate_finished_reward_trials':  # finished and reward trials
+        'double_dipping_rate_finished_reward_trials':  # finished and reward trials (by definition, not ignored)
             (df_trials.loc[df_trials.reward, 'n_lick_switches_gocue_stop'] > 0).sum()  
             / df_trials.reward.sum(),
         'double_dipping_rate_finished_noreward_trials':   # finished but non-reward trials
