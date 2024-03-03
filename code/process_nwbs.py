@@ -99,10 +99,21 @@ def nwb_to_df_session(nwb):
     n_finished_trials = np.sum(~np.isnan(choice_history))
     
     # Actual foraging trials (autowater excluded)
-    _non_autowater_trials = (df_trials.auto_waterL==0) & (df_trials.auto_waterR==0)
-    _non_autowater_finished_trials = _non_autowater_trials & ~np.isnan(choice_history)
-    n_total_trials_non_autowater = np.sum(_non_autowater_trials)
-    n_finished_trials_non_autowater = np.sum(_non_autowater_finished_trials)
+    non_autowater_trials = (df_trials.auto_waterL==0) & (df_trials.auto_waterR==0)
+    non_autowater_finished_trials = non_autowater_trials & ~np.isnan(choice_history)
+    n_total_trials_non_autowater = np.sum(non_autowater_trials)
+    n_finished_trials_non_autowater = np.sum(non_autowater_finished_trials)
+    
+    # Add some columns to df_trials for convenience
+    df_trials['reward'] = False  # All reward, including autowater
+    df_trials.loc[(reward_history.sum(axis=0) | df_trials.auto_waterR | df_trials.auto_waterL) > 0, 'reward'] = True
+    df_trials['reward_non_autowater'] = False  # Only reward from non-autowater trials
+    df_trials.loc[reward_history.sum(axis=0) > 0, 'reward_non_autowater'] = True
+    
+    df_trials['non_autowater_trial'] = False
+    df_trials.loc[non_autowater_trials, 'non_autowater_trials'] = True
+    df_trials['non_autowater_finished_trial'] = False
+    df_trials.loc[non_autowater_finished_trials, 'non_autowater_finished_trial'] = True
     
     # Reward trials only include non-autowater trials
     n_reward_trials_non_autowater = np.sum(reward_history)  # Note that reward history only include non-autowater trials
@@ -111,10 +122,10 @@ def nwb_to_df_session(nwb):
     # Foraging efficiency (autowater and ignored trials must be excluded)
     foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
     foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater, 
-                                                               p_reward[LEFT, _non_autowater_finished_trials], 
-                                                               p_reward[RIGHT, _non_autowater_finished_trials], 
-                                                               reward_random_number[LEFT, _non_autowater_finished_trials], 
-                                                               reward_random_number[RIGHT, _non_autowater_finished_trials]
+                                                               p_reward[LEFT, non_autowater_finished_trials], 
+                                                               p_reward[RIGHT, non_autowater_finished_trials], 
+                                                               reward_random_number[LEFT, non_autowater_finished_trials], 
+                                                               reward_random_number[RIGHT, non_autowater_finished_trials]
                                                                )
 
     # TODO: add more stats
@@ -124,8 +135,6 @@ def nwb_to_df_session(nwb):
     # mean_block_length
     # mean_reward_sum
     # mean_reward_contrast
-    # autowater_num
-    # autowater_ratio
     #
     # mean_iti
     # mean_reward_sum
@@ -133,8 +142,8 @@ def nwb_to_df_session(nwb):
     # ...
     
     # --- Naive bias (Bari et al) (autowater excluded) ---
-    n_left = np.sum(choice_history[_non_autowater_trials] == LEFT)
-    n_right = np.sum(choice_history[_non_autowater_trials] == RIGHT)
+    n_left = np.sum(choice_history[non_autowater_trials] == LEFT)
+    n_right = np.sum(choice_history[non_autowater_trials] == RIGHT)
     bias_naive = 2 * (n_right / (n_left + n_right) - 0.5)
     
     
@@ -142,57 +151,75 @@ def nwb_to_df_session(nwb):
     all_left_licks = nwb.acquisition['left_lick_time'].timestamps[:]
     all_right_licks = nwb.acquisition['right_lick_time'].timestamps[:]
         
+    def _lick_analysis_in_epoch(choice, start_time, stop_time):
+        """
+        Analyze lick-related stats in a given epoch.
+        """
+        lick_stats = {}
+        
+        left_licks = all_left_licks[(all_left_licks > start_time) & (all_left_licks < stop_time)]
+        right_licks = all_right_licks[(all_right_licks > start_time) & (all_right_licks < stop_time)]
+        all_licks = np.hstack([left_licks, right_licks])
+        
+        lick_stats['first_lick'] = all_licks.min() if len(all_licks) > 0 else np.nan
+        lick_stats['n_lick_left'] = len(left_licks)
+        lick_stats['n_lick_right'] = len(right_licks)
+        lick_stats['n_lick_all'] = len(all_licks)
+            
+        # For double-dipping
+        _lick_identity = np.hstack([np.ones(len(left_licks)) * LEFT, np.ones(len(right_licks)) * RIGHT])
+        _lick_identity_sorted = [x for x, _ in sorted(zip(_lick_identity, all_licks), key=lambda pairs: pairs[1])]
+        # Numer of switching side (for example, LRL -> 2 switches)
+        lick_stats['n_lick_switches'] = np.sum(np.diff(_lick_identity_sorted) != 0)
+        # Lick consistency = licks that are consistent with the animal's first lick / all licks (for example, LRL -> 2/3)
+        lick_stats['lick_consistency'] = np.sum(_lick_identity_sorted == choice) / len(_lick_identity_sorted) \
+            if len(_lick_identity_sorted) > 0 else np.nan
+    
+        return lick_stats
+    
+    # Define the start and stop time for each epoch
+    lick_stats_epochs = {
+        # Name: (start_time_name, stop_time_name)
+        'gocue_stop': ['goCue_start_time', 'stop_time'],
+        'delay_period': ['delay_start_time', 'goCue_start_time'],
+        'iti': ['start_time', 'delay_start_time'],        
+        }
+    
     # Trial-by-trial counts
     for i in range(len(df_trials)):
-        # -- Licks between the gocue and stop (valid licks) --
-        df_trials.loc[i, 'duration_gocue_stop'] = df_trials.stop_time[i] - df_trials.goCue_start_time[i]
-        left_licks_gocue_stop = all_left_licks[(all_left_licks > df_trials.goCue_start_time[i]) & (all_left_licks < df_trials.stop_time[i])]
-        right_licks_gocue_stop = all_right_licks[(all_right_licks > df_trials.goCue_start_time[i]) & (all_right_licks < df_trials.stop_time[i])]
-        all_licks_gocue_stop = np.hstack([left_licks_gocue_stop, right_licks_gocue_stop])
-        
-        if df_trials.animal_response[i] != IGNORE:
-            df_trials.loc[i, 'reaction_time'] = all_licks_gocue_stop.min() - df_trials.goCue_start_time[i]
-            df_trials.loc[i, 'n_valid_licks_left'] = len(left_licks_gocue_stop)
-            df_trials.loc[i, 'n_valid_licks_right'] = len(right_licks_gocue_stop)
-            df_trials.loc[i, 'n_valid_licks_all'] = len(all_licks_gocue_stop)
-        else:
-            # Even in ignore trials, there may be licks outside the response window, but they are invalid
-            df_trials.loc[i, 'reaction_time'] = np.nan
-            df_trials.loc[i, 'n_valid_licks_left'] = 0
-            df_trials.loc[i, 'n_valid_licks_right'] = 0
-            df_trials.loc[i, 'n_valid_licks_all'] = 0
+        for epoch_name, (start_time_name, stop_time_name) in lick_stats_epochs.items():
+            start_time, stop_time = df_trials.loc[i, [start_time_name, stop_time_name]]
+            lick_stats = _lick_analysis_in_epoch(
+                choice=df_trials.animal_response[i],
+                start_time=start_time,
+                stop_time=stop_time
+            )
             
-        # Double-dipping between gocue and stop (number of switching sides)
-        df_trials.loc[i, 'n_double_dipping_gocue_stop'] = np.sum(np.diff(all_licks_gocue_stop) != 0)
+            df_trials.loc[i, f'duration_{epoch_name}'] = stop_time - start_time
+            df_trials.loc[i, f'n_lick_left_{epoch_name}'] = lick_stats['n_lick_left']
+            df_trials.loc[i, f'n_lick_right_{epoch_name}'] = lick_stats['n_lick_right']
+            df_trials.loc[i, f'n_lick_all_{epoch_name}'] = lick_stats['n_lick_all']
+            df_trials.loc[i, f'n_lick_switches_{epoch_name}'] = lick_stats['n_lick_switches']
+            df_trials.loc[i, f'n_lick_consistency_{epoch_name}'] = lick_stats['lick_consistency']
             
-        # -- Licks between delay_start and gocue (early licks) --
-        df_trials.loc[i, 'duration_delay_period'] = df_trials.goCue_start_time[i] - df_trials.delay_start_time[i]
-        left_licks_delay_gocue = all_left_licks[(all_left_licks > df_trials.delay_start_time[i]) & (all_left_licks < df_trials.goCue_start_time[i])]
-        right_licks_delay_gocue = all_right_licks[(all_right_licks > df_trials.delay_start_time[i]) & (all_right_licks < df_trials.goCue_start_time[i])]
-        all_licks_delay_gocue = np.hstack([left_licks_delay_gocue, right_licks_delay_gocue])
-        
-        df_trials.loc[i, 'n_early_licks_left'] = len(left_licks_delay_gocue)
-        df_trials.loc[i, 'n_early_licks_right'] = len(right_licks_delay_gocue)
-        df_trials.loc[i, 'n_early_licks_all'] = len(all_licks_delay_gocue)
-        df_trials.loc[i, 'n_double_dipping_delay_period'] = np.sum(np.diff(all_licks_delay_gocue) != 0)
-        
-        # -- Licks between start_time and delay_start (ITI licks) --
-        df_trials.loc[i, 'duration_iti'] = df_trials.delay_start_time[i] - df_trials.start_time[i]
-        left_licks_iti = all_left_licks[(all_left_licks > df_trials.start_time[i]) & (all_left_licks < df_trials.delay_start_time[i])]
-        right_licks_iti = all_right_licks[(all_right_licks > df_trials.start_time[i]) & (all_right_licks < df_trials.delay_start_time[i])]
-        all_licks_iti = np.hstack([left_licks_iti, right_licks_iti])
-        
-        df_trials.loc[i, 'n_iti_licks_left'] = len(left_licks_iti)
-        df_trials.loc[i, 'n_iti_licks_right'] = len(right_licks_iti)
-        df_trials.loc[i, 'n_iti_licks_all'] = len(all_licks_iti)
-        df_trials.loc[i, 'n_double_dipping_iti'] = np.sum(np.diff(all_licks_iti) != 0)
-        
-        
+            # Special treatment for gocue to stop
+            if epoch_name == 'gocue_stop':
+                df_trials.loc[i, 'reaction_time'] = lick_stats['first_lick'] - df_trials.goCue_start_time[i]
+                
+                # Even in ignore trials, there may be licks outside the response window, 
+                # but they are invalid and should be overriden by NaN
+                if df_trials.animal_response[i] == IGNORE:
+                    df_trials.loc[i, 'reaction_time'] = np.nan
+                    df_trials.loc[i, 'n_valid_licks_left'] = 0
+                    df_trials.loc[i, 'n_valid_licks_right'] = 0
+                    df_trials.loc[i, 'n_valid_licks_all'] = 0
+       
 
     # -- Add session stats here --
-    # By default, autowater are excluded in all sessions stats
-    # Only those with "_with_autowater" suffix include autowater trials
     dict_session_stat = {
+        # 1. Basic performance
+        # By default, autowater are excluded in sessions stats that are related to foraging efficiency
+        # Only those with "_with_autowater" suffix include autowater trials
         'total_trials_with_autowater': n_total_trials,
         'finished_trials_with_autowater': n_finished_trials,
         'finished_rate_with_autowater': n_finished_trials / n_total_trials,
@@ -201,17 +228,63 @@ def nwb_to_df_session(nwb):
         'total_trials': n_total_trials_non_autowater,
         'finished_trials': n_finished_trials_non_autowater,
         'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater,
-        'ignore_rate': np.sum(np.isnan(choice_history[_non_autowater_trials])) / n_total_trials_non_autowater,
+        'ignore_rate': np.sum(np.isnan(choice_history[non_autowater_trials])) / n_total_trials_non_autowater,
         
         'reward_trials': n_reward_trials_non_autowater,
         'reward_rate': reward_rate_non_autowater,
-        
-        # Autowater is excluded by default in foraging efficiency calculation
         'foraging_eff': foraging_eff,
         'foraging_eff_random_seed': foraging_eff_random_seed,
         
         'bias_naive': bias_naive,
         
+        # 2. Task stats
+        'duration_gocue_stop_median': df_trials.loc[:, 'duration_gocue_stop'].median(),
+        'duration_delay_period_median': df_trials.loc[:, 'duration_delay_period'].median(),
+        'duration_iti_median': df_trials.loc[:, 'duration_iti'].median(),
+        'duration_gocue_stop_mean': df_trials.loc[:, 'duration_gocue_stop'].mean(),
+        'duration_delay_period_mean': df_trials.loc[:, 'duration_delay_period'].mean(),
+        'duration_iti_mean': df_trials.loc[:, 'duration_iti'].mean(),
+                
+        # 3. Lick timing (including autowater trials because they are orthogonal to "foraging")
+        'reaction_time_median': df_trials.loc[:, 'reaction_time'].median(),
+        'reaction_time_mean': df_trials.loc[:, 'reaction_time'].mean(),
+        
+        'early_lick_rate':  # the proportion of trials with licks during the delay period
+            (df_trials.loc[:, 'n_lick_all_delay_period'] > 0).sum() / n_total_trials,
+        
+        'invalid_lick_ratio':   # in all trials, licks outside gocue-stop window / all licks
+            (len(all_right_licks) + len(all_left_licks) - df_trials.loc[:, 'n_lick_all_gocue_stop'].sum())
+            / (len(all_right_licks) + len(all_left_licks)),
+            
+        # 4. Lick consistency (during the response period, in finished trials only)
+        'double_dipping_rate_finished_trials':  # In finished trials, the proportion of trials with licks on both sides 
+            (df_trials.loc[(df_trials.animal_response != IGNORE), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / (df_trials.animal_response != IGNORE).sum(),
+        'double_dipping_rate_finished_reward_trials':  # finished and reward trials
+            (df_trials.loc[df_trials.reward, 'n_lick_switches_gocue_stop'] > 0).sum()  
+            / df_trials.reward.sum(),
+        'double_dipping_rate_finished_noreward_trials':   # finished but non-reward trials
+            (df_trials.loc[(df_trials.animal_response != IGNORE) & (~df_trials.reward), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / ((df_trials.animal_response != IGNORE) & (~df_trials.reward)).sum(),
+            
+        'lick_consistency_mean_finished_trials': 
+            df_trials.loc[(df_trials.animal_response != IGNORE), 'n_lick_consistency_gocue_stop'].mean(),
+        'lick_consistency_mean_finished_reward_trials': 
+            df_trials.loc[df_trials.reward, 'n_lick_consistency_gocue_stop'].mean(),
+        'lick_consistency_mean_finished_noreward_trials': 
+            df_trials.loc[(df_trials.animal_response != IGNORE) & (~df_trials.reward), 'n_lick_consistency_gocue_stop'].mean(),
+
+        # **{
+        #     'early_lick_trial_ratio': 
+        #     for epoch_name in lick_stats_epochs.keys()
+        # }
+
+        #     df_trials.loc[i, f'n_lick_left_{epoch_name}'] = lick_stats['n_lick_left']
+        #     df_trials.loc[i, f'n_lick_right_{epoch_name}'] = lick_stats['n_lick_right']
+        #     df_trials.loc[i, f'n_lick_all_{epoch_name}'] = lick_stats['n_lick_all']
+        #     df_trials.loc[i, f'n_lick_switches_{epoch_name}'] = lick_stats['n_lick_switches']
+        #     df_trials.loc[i, f'n_lick_consistency_{epoch_name}'] = lick_stats['lick_consistency']
+
 
     }
         
@@ -372,7 +445,10 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
-        to_debug = '668551_2023-06-15_3.nwb'  # During debugging, only process this file
+        
+        to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
+        # to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
+        
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logging.info(f'nwb files to process: {nwb_file_names}')
