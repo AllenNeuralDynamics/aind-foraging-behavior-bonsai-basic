@@ -502,17 +502,22 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode:
-        
         # to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
         to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
-        
-        # nwb_file_names = [f for f in nwb_file_names if to_debug in f]
+        nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logger.info(f'nwb files to process: {nwb_file_names}')
 
-    with mp.Pool(processes=mp.cpu_count() - 1) as pool:
+    # Note that in Code Ocean, mp.cpu_count() is not necessarily the number of cores available in this session.
+    # For example, even in the environment setting with 4 cores, mp.cpu_count() returns 16.
+    # To really speed up when manually re-do all sessions, make sure to set core = 16 or more in the environment setting.``
+    try:
+        n_cpus = int(sys.argv[1])  # Input from pipeline
+    except:
+        n_cpus = 1
+    
+    with mp.Pool(processes=n_cpus) as pool:
         jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
-        
         for job in tqdm.tqdm(jobs):
             job.get()
 
