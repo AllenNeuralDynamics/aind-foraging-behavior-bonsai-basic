@@ -272,7 +272,7 @@ def compute_df_session_performance(nwb, df_trial):
     n_finished_trials_non_autowater = df_trial.non_autowater_finished_trial.sum()
         
     n_reward_trials_non_autowater = df_trial.reward_non_autowater.sum()
-    reward_rate_non_autowater_finished = n_reward_trials_non_autowater / n_finished_trials_non_autowater
+    reward_rate_non_autowater_finished = n_reward_trials_non_autowater / n_finished_trials_non_autowater if n_finished_trials_non_autowater > 0 else np.nan
 
     # Foraging efficiency (autowater and ignored trials must be excluded)
     foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
@@ -288,7 +288,7 @@ def compute_df_session_performance(nwb, df_trial):
     # --- Naive bias (Bari et al) (autowater excluded) ---
     n_left = ((df_trial.animal_response == LEFT) & (df_trial.non_autowater_trial)).sum()
     n_right = ((df_trial.animal_response == RIGHT) & (df_trial.non_autowater_trial)).sum()
-    bias_naive = 2 * (n_right / (n_left + n_right) - 0.5)
+    bias_naive = 2 * (n_right / (n_left + n_right) - 0.5) if n_left + n_right > 0 else np.nan
 
     # -- Add session stats here --
     dict_performance = {
@@ -302,8 +302,8 @@ def compute_df_session_performance(nwb, df_trial):
         
         'total_trials': n_total_trials_non_autowater,
         'finished_trials': n_finished_trials_non_autowater,
-        'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater,
-        'ignore_rate': 1 - n_finished_trials_non_autowater / n_total_trials_non_autowater,
+        'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
+        'ignore_rate': 1 - n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
         
         'reward_trials': n_reward_trials_non_autowater,
         'reward_rate': reward_rate_non_autowater_finished,
@@ -484,6 +484,10 @@ if __name__ == '__main__':
     import multiprocessing as mp
     import tqdm
     
+    # ----------------------------
+    LOCAL_MANUAL_OVERRIDE = False   # If true, local batch process all nwb files in /data/foraging_nwb_bonsai with n_CPUs = 16
+    # ----------------------------
+    
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
@@ -501,9 +505,10 @@ if __name__ == '__main__':
 
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
-    if if_debug_mode:
+    if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
         # to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
-        to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
+        # to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
+        to_debug = '699982_2023-11-06_11-59-58.nwb'
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logger.info(f'nwb files to process: {nwb_file_names}')
@@ -514,12 +519,16 @@ if __name__ == '__main__':
     try:
         n_cpus = int(sys.argv[1])  # Input from pipeline
     except:
-        n_cpus = 1
+        n_cpus = 16 if LOCAL_MANUAL_OVERRIDE else 1
     
-    with mp.Pool(processes=n_cpus) as pool:
-        jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
-        for job in tqdm.tqdm(jobs):
-            job.get()
+    if n_cpus > 1:
+        with mp.Pool(processes=n_cpus) as pool:
+            jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
+            for job in tqdm.tqdm(jobs):
+                job.get()
+    else:
+        for nwb_file_name in tqdm.tqdm(nwb_file_names):
+            process_one_nwb(nwb_file_name, result_folder)
 
 
 # %%
