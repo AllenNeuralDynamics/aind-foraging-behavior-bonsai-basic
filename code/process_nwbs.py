@@ -18,6 +18,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 LEFT, RIGHT, IGNORE = 0, 1, 2
 
+logger = logging.getLogger(__name__)
+
 def _get_block_starts(p_L, p_R):
     """Find the indices of block starts
     """
@@ -414,7 +416,7 @@ def process_one_nwb(nwb_file_name, result_root):
     '''
     Process one nwb file and save the results to result_folder_root/{subject}_{session_date}/
     '''
-    logging.info(f'{nwb_file_name} processing...')
+    logger.info(f'{nwb_file_name} processing...')
     
     try:
         io = NWBHDF5IO(nwb_file_name, mode='r')
@@ -433,7 +435,7 @@ def process_one_nwb(nwb_file_name, result_root):
         # 1. Generate df_session and df_trial
         pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
         pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
-        logging.info(f'{nwb_file_name} 1. df_session and df_trial done.')
+        logger.info(f'{nwb_file_name} 1. df_session and df_trial done.')
                 
         # TODO: generate more dfs like this
         
@@ -441,13 +443,13 @@ def process_one_nwb(nwb_file_name, result_root):
         fig = plot_session_choice_history(nwb)
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
-        logging.info(f'{nwb_file_name} 2. plot choice history done.')
+        logger.info(f'{nwb_file_name} 2. plot choice history done.')
         plt.close(fig)        
         
         # TODO: generate more plots like this
         
     except Exception as e:
-        logging.error(f'{nwb_file_name} failed!!', exc_info=True)
+        logger.error(f'{nwb_file_name} failed!!', exc_info=True)
         log_error_file(nwb_file_name, result_root)
     return
 
@@ -482,12 +484,14 @@ if __name__ == '__main__':
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
-    
-    logging.basicConfig(filename=f"{result_folder}/capsule.log",
-                                level=logging.INFO,
-                                format='%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
-                                datefmt='%Y-%m-%d %H:%M:%S')
 
+    # Create a file handler with the specified file path
+    logger.setLevel(level=logging.INFO)
+    file_handler = logging.FileHandler(f"{result_folder}/capsule.log")
+    formatter = logging.Formatter('%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s', 
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
@@ -501,7 +505,7 @@ if __name__ == '__main__':
         
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
-    logging.info(f'nwb files to process: {nwb_file_names}')
+    logger.info(f'nwb files to process: {nwb_file_names}')
 
     for nwb_file_name in nwb_file_names:
         process_one_nwb(nwb_file_name, result_folder)
