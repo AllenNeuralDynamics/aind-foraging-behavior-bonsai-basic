@@ -18,9 +18,17 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 LEFT, RIGHT, IGNORE = 0, 1, 2
 
-def _lick_analysis_in_epoch(all_left_licks, all_right_licks, choice, start_time, stop_time):
+def _get_block_starts(p_L, p_R):
+    """Find the indices of block starts
     """
-    Analyze lick-related stats in a given epoch.
+    block_start_ind_left = np.where(np.hstack([True, np.diff(p_L) != 0]))[0]
+    block_start_ind_right = np.where(np.hstack([True, np.diff(p_R) != 0]))[0]
+    block_start_ind_effective = np.sort(np.unique(np.hstack([block_start_ind_left, block_start_ind_right])))
+    return block_start_ind_left, block_start_ind_right, block_start_ind_effective
+    
+
+def _lick_analysis_in_epoch(all_left_licks, all_right_licks, choice, start_time, stop_time):
+    """ Analyze lick-related stats in a given epoch.
     """
     lick_stats = {}
     
@@ -109,7 +117,7 @@ def compute_df_trial(nwb):
     return df_trial
 
 def compute_df_session_meta(nwb, df_trial):
-    # - Meta data -
+    # -- Key meta data --
     session_start_time_from_meta = nwb.session_start_time
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
@@ -146,9 +154,21 @@ def compute_df_session_meta(nwb, df_trial):
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
-    # Parse meta info   
+    # -- Meta info from nwb.scratch --
     meta_dict = nwb.scratch['metadata'].to_dataframe().iloc[0].to_dict()
-
+    
+    # -- Meta data that are only available after the session --
+    p_L = df_trial.reward_probabilityL.values
+    p_R = df_trial.reward_probabilityR.values
+    p_contrast = np.max([p_L, p_R], axis=0) / np.min([p_L, p_R], axis=0)
+    p_contrast[np.isinf(p_contrast)] = 100  # Cap the contrast at 100
+    
+    # Parse effective block
+    block_start_left, block_start_right, block_start_effective = _get_block_starts(p_L, p_R)
+    if 'uncoupled' not in nwb.protocol.lower():
+        assert all(block_start_left == block_start_right), "Blocks are not fully aligned in a Coupled task!"
+    
+    # -- Pack data --
     dict_meta = {
         'rig': meta_dict['box'],
         'user_name': nwb.experimenter[0],
@@ -159,17 +179,42 @@ def compute_df_session_meta(nwb, df_trial):
         
         **{key: value for key, value in meta_dict.items() 
            if key not in ['box' ,
-                          # There are bugs in computing foraging eff online. Let's recalculate later.
+                          # There are bugs in computing foraging eff online. Let's recalculate in df_session_performance later.
                           'foraging_efficiency', 'foraging_efficiency_with_actual_random_seed']  
            },
         
+        # Block structure
+        'p_reward_sum_mean': np.mean(p_L + p_R),
+        'p_reward_sum_std': np.std(p_L + p_R),
+        'p_reward_sum_median': np.median(p_L + p_R),
+        
+        'p_reward_contrast_mean': np.mean(p_contrast),
+        'p_reware_contrast_median': np.median(p_contrast),
+        
+        'effective_block_length_mean': np.mean(np.diff(block_start_effective)),
+        'effective_block_length_std': np.std(np.diff(block_start_effective)),
+        'effective_block_length_median': np.median(np.diff(block_start_effective)),
+        'effective_block_length_min': np.min(np.diff(block_start_effective)),
+        'effective_block_length_max': np.max(np.diff(block_start_effective)),
+        
         # Durations
-        'duration_gocue_stop_median': df_trial.loc[:, 'duration_gocue_stop'].median(),
-        'duration_delay_period_median': df_trial.loc[:, 'duration_delay_period'].median(),
-        'duration_iti_median': df_trial.loc[:, 'duration_iti'].median(),
         'duration_gocue_stop_mean': df_trial.loc[:, 'duration_gocue_stop'].mean(),
+        'duration_gocue_stop_std': df_trial.loc[:, 'duration_gocue_stop'].std(),
+        'duration_gocue_stop_median': df_trial.loc[:, 'duration_gocue_stop'].median(),
+        'duration_gocue_stop_min': df_trial.loc[:, 'duration_gocue_stop'].min(),
+        'duration_gocue_stop_max': df_trial.loc[:, 'duration_gocue_stop'].max(),
+
         'duration_delay_period_mean': df_trial.loc[:, 'duration_delay_period'].mean(),
+        'duration_delay_period_std': df_trial.loc[:, 'duration_delay_period'].std(),
+        'duration_delay_period_median': df_trial.loc[:, 'duration_delay_period'].median(),
+        'duration_delay_period_min': df_trial.loc[:, 'duration_delay_period'].min(),
+        'duration_delay_period_max': df_trial.loc[:, 'duration_delay_period'].max(),
+
         'duration_iti_mean': df_trial.loc[:, 'duration_iti'].mean(),
+        'duration_iti_std': df_trial.loc[:, 'duration_iti'].std(),
+        'duration_iti_median': df_trial.loc[:, 'duration_iti'].median(),
+        'duration_iti_min': df_trial.loc[:, 'duration_iti'].min(),
+        'duration_iti_max': df_trial.loc[:, 'duration_iti'].max(),
         }
 
     df_meta = pd.DataFrame(dict_meta, 
@@ -439,8 +484,8 @@ if __name__ == '__main__':
 
     if if_debug_mode:
         
-        to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
-        # to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
+        # to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
+        to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
         
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
