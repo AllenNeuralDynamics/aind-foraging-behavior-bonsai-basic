@@ -44,25 +44,25 @@ def _lick_analysis_in_epoch(all_left_licks, all_right_licks, choice, start_time,
 
     return lick_stats
 
-def compute_df_trials(nwb):
+def compute_df_trial(nwb):
     """
-    return df_trials that contains the original nwb.trials and other trial stats
+    return df_trial that contains the original nwb.trials and other trial stats
     """
     
-    df_trials = nwb.trials.to_dataframe().copy()
+    df_trial = nwb.trials.to_dataframe().copy()
     
-    # --- Add some columns to df_trials for convenience ---
-    df_trials['reward'] = False  # All reward, including (collected!) autowater
-    df_trials.loc[(df_trials.rewarded_historyL | df_trials.rewarded_historyR
-                   | df_trials.auto_waterR | df_trials.auto_waterL 
-                    & (df_trials.animal_response != IGNORE))  # because there may be "ignored" autowater...
+    # --- Add some columns to df_trial for convenience ---
+    df_trial['reward'] = False  # All reward, including (collected!) autowater
+    df_trial.loc[(df_trial.rewarded_historyL | df_trial.rewarded_historyR
+                   | df_trial.auto_waterR | df_trial.auto_waterL 
+                    & (df_trial.animal_response != IGNORE))  # because there may be "ignored" autowater...
                     > 0, 'reward'] = True
-    df_trials['reward_non_autowater'] = False  # Only reward from non-autowater trials (by definition, animal must not have ignored)
-    df_trials.loc[(df_trials.rewarded_historyL | df_trials.rewarded_historyR), 'reward_non_autowater'] = True
+    df_trial['reward_non_autowater'] = False  # Only reward from non-autowater trials (by definition, animal must not have ignored)
+    df_trial.loc[(df_trial.rewarded_historyL | df_trial.rewarded_historyR), 'reward_non_autowater'] = True
     
-    df_trials['non_autowater_trial'] = False
-    df_trials.loc[(df_trials.auto_waterL==0) & (df_trials.auto_waterR==0), 'non_autowater_trial'] = True
-    df_trials['non_autowater_finished_trial'] = df_trials['non_autowater_trial'] & (df_trials['animal_response'] != IGNORE)
+    df_trial['non_autowater_trial'] = False
+    df_trial.loc[(df_trial.auto_waterL==0) & (df_trial.auto_waterR==0), 'non_autowater_trial'] = True
+    df_trial['non_autowater_finished_trial'] = df_trial['non_autowater_trial'] & (df_trial['animal_response'] != IGNORE)
     
     # --- Lick-related stats ---    
     all_left_licks = nwb.acquisition['left_lick_time'].timestamps[:]
@@ -77,38 +77,38 @@ def compute_df_trials(nwb):
         }
     
     # Trial-by-trial counts
-    for i in range(len(df_trials)):
+    for i in range(len(df_trial)):
         for epoch_name, (start_time_name, stop_time_name) in lick_stats_epochs.items():
-            start_time, stop_time = df_trials.loc[i, [start_time_name, stop_time_name]]
+            start_time, stop_time = df_trial.loc[i, [start_time_name, stop_time_name]]
             lick_stats = _lick_analysis_in_epoch(
                 all_left_licks=all_left_licks, 
                 all_right_licks=all_right_licks,
-                choice=df_trials.animal_response[i],
+                choice=df_trial.animal_response[i],
                 start_time=start_time,
                 stop_time=stop_time
             )
             
-            df_trials.loc[i, f'duration_{epoch_name}'] = stop_time - start_time
-            df_trials.loc[i, f'n_lick_left_{epoch_name}'] = lick_stats['n_lick_left']
-            df_trials.loc[i, f'n_lick_right_{epoch_name}'] = lick_stats['n_lick_right']
-            df_trials.loc[i, f'n_lick_all_{epoch_name}'] = lick_stats['n_lick_all']
-            df_trials.loc[i, f'n_lick_switches_{epoch_name}'] = lick_stats['n_lick_switches']
-            df_trials.loc[i, f'n_lick_consistency_{epoch_name}'] = lick_stats['lick_consistency']
+            df_trial.loc[i, f'duration_{epoch_name}'] = stop_time - start_time
+            df_trial.loc[i, f'n_lick_left_{epoch_name}'] = lick_stats['n_lick_left']
+            df_trial.loc[i, f'n_lick_right_{epoch_name}'] = lick_stats['n_lick_right']
+            df_trial.loc[i, f'n_lick_all_{epoch_name}'] = lick_stats['n_lick_all']
+            df_trial.loc[i, f'n_lick_switches_{epoch_name}'] = lick_stats['n_lick_switches']
+            df_trial.loc[i, f'n_lick_consistency_{epoch_name}'] = lick_stats['lick_consistency']
             
             # Special treatment for gocue to stop
             if epoch_name == 'gocue_stop':
-                df_trials.loc[i, 'reaction_time'] = lick_stats['first_lick'] - df_trials.goCue_start_time[i]
+                df_trial.loc[i, 'reaction_time'] = lick_stats['first_lick'] - df_trial.goCue_start_time[i]
                 
                 # Even in ignore trials, there may be licks outside the response window, 
                 # but they are invalid and should be overriden by NaN
-                if df_trials.animal_response[i] == IGNORE:
-                    df_trials.loc[i, 'reaction_time'] = np.nan
-                    df_trials.loc[i, 'n_valid_licks_left'] = 0
-                    df_trials.loc[i, 'n_valid_licks_right'] = 0
-                    df_trials.loc[i, 'n_valid_licks_all'] = 0
-    return df_trials
+                if df_trial.animal_response[i] == IGNORE:
+                    df_trial.loc[i, 'reaction_time'] = np.nan
+                    df_trial.loc[i, 'n_valid_licks_left'] = 0
+                    df_trial.loc[i, 'n_valid_licks_right'] = 0
+                    df_trial.loc[i, 'n_valid_licks_all'] = 0
+    return df_trial
 
-def compute_df_session_meta(nwb, df_trials):
+def compute_df_session_meta(nwb, df_trial):
     # - Meta data -
     session_start_time_from_meta = nwb.session_start_time
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
@@ -164,12 +164,12 @@ def compute_df_session_meta(nwb, df_trials):
            },
         
         # Durations
-        'duration_gocue_stop_median': df_trials.loc[:, 'duration_gocue_stop'].median(),
-        'duration_delay_period_median': df_trials.loc[:, 'duration_delay_period'].median(),
-        'duration_iti_median': df_trials.loc[:, 'duration_iti'].median(),
-        'duration_gocue_stop_mean': df_trials.loc[:, 'duration_gocue_stop'].mean(),
-        'duration_delay_period_mean': df_trials.loc[:, 'duration_delay_period'].mean(),
-        'duration_iti_mean': df_trials.loc[:, 'duration_iti'].mean(),
+        'duration_gocue_stop_median': df_trial.loc[:, 'duration_gocue_stop'].median(),
+        'duration_delay_period_median': df_trial.loc[:, 'duration_delay_period'].median(),
+        'duration_iti_median': df_trial.loc[:, 'duration_iti'].median(),
+        'duration_gocue_stop_mean': df_trial.loc[:, 'duration_gocue_stop'].mean(),
+        'duration_delay_period_mean': df_trial.loc[:, 'duration_delay_period'].mean(),
+        'duration_iti_mean': df_trial.loc[:, 'duration_iti'].mean(),
         }
 
     df_meta = pd.DataFrame(dict_meta, 
@@ -180,16 +180,16 @@ def compute_df_session_meta(nwb, df_trials):
                                                 names=['type', 'variable'])
     
     # -- Add automatic training --
-    if 'auto_train_engaged' in df_trials.columns:       
-        df_meta['auto_train', 'curriculum_name'] = np.nan if df_trials.auto_train_curriculum_name.mode()[0] == 'none' else df_trials.auto_train_curriculum_name.mode()[0]
-        df_meta['auto_train', 'curriculum_version'] = np.nan if df_trials.auto_train_curriculum_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_version.mode()[0]
-        df_meta['auto_train', 'curriculum_schema_version'] = np.nan if df_trials.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_schema_version.mode()[0]
-        df_meta['auto_train', 'current_stage_actual'] = np.nan if df_trials.auto_train_stage.mode()[0] == 'none' else df_trials.auto_train_stage.mode()[0]
-        df_meta['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trials.auto_train_stage_overridden.isna()) else df_trials.auto_train_stage_overridden.mode()[0]
+    if 'auto_train_engaged' in df_trial.columns:       
+        df_meta['auto_train', 'curriculum_name'] = np.nan if df_trial.auto_train_curriculum_name.mode()[0] == 'none' else df_trial.auto_train_curriculum_name.mode()[0]
+        df_meta['auto_train', 'curriculum_version'] = np.nan if df_trial.auto_train_curriculum_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_version.mode()[0]
+        df_meta['auto_train', 'curriculum_schema_version'] = np.nan if df_trial.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_schema_version.mode()[0]
+        df_meta['auto_train', 'current_stage_actual'] = np.nan if df_trial.auto_train_stage.mode()[0] == 'none' else df_trial.auto_train_stage.mode()[0]
+        df_meta['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trial.auto_train_stage_overridden.isna()) else df_trial.auto_train_stage_overridden.mode()[0]
         
         # Add a flag to indicate whether any of the auto train settings were changed during the training
-        df_meta['auto_train', 'if_consistent_within_session'] = len(df_trials.groupby(
-            [col for col in df_trials.columns if 'auto_train' in col]
+        df_meta['auto_train', 'if_consistent_within_session'] = len(df_trial.groupby(
+            [col for col in df_trial.columns if 'auto_train' in col]
         )) == 1
     else:
         for field in ['curriculum_name', 
@@ -201,38 +201,38 @@ def compute_df_session_meta(nwb, df_trials):
     
     return df_meta
 
-def compute_df_session_performance(nwb, df_trials):
+def compute_df_session_performance(nwb, df_trial):
     # TODO: Ideally, all these simple stats could be computed in the GUI, and 
     # the GUI sends a copy to the meta session.json file and to the nwb file as well.
     
-    n_total_trials = len(df_trials)
-    n_finished_trials = (df_trials.animal_response != IGNORE).sum()
+    n_total_trials = len(df_trial)
+    n_finished_trials = (df_trial.animal_response != IGNORE).sum()
     
     # Actual foraging trials (autowater excluded)
-    n_total_trials_non_autowater = df_trials.non_autowater_trial.sum()
-    n_finished_trials_non_autowater = df_trials.non_autowater_finished_trial.sum()
+    n_total_trials_non_autowater = df_trial.non_autowater_trial.sum()
+    n_finished_trials_non_autowater = df_trial.non_autowater_finished_trial.sum()
         
-    n_reward_trials_non_autowater = df_trials.reward_non_autowater.sum()
+    n_reward_trials_non_autowater = df_trial.reward_non_autowater.sum()
     reward_rate_non_autowater_finished = n_reward_trials_non_autowater / n_finished_trials_non_autowater
 
     # Foraging efficiency (autowater and ignored trials must be excluded)
     foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
     foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater_finished, 
-                                                               df_trials.reward_probabilityL[df_trials.non_autowater_finished_trial].values, 
-                                                               df_trials.reward_probabilityR[df_trials.non_autowater_finished_trial].values, 
-                                                               df_trials.reward_random_number_left[df_trials.non_autowater_finished_trial].values, 
-                                                               df_trials.reward_random_number_right[df_trials.non_autowater_finished_trial].values
+                                                               df_trial.reward_probabilityL[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_probabilityR[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_random_number_left[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_random_number_right[df_trial.non_autowater_finished_trial].values
                                                                )
 
     all_lick_number = len(nwb.acquisition['left_lick_time'].timestamps) + len(nwb.acquisition['right_lick_time'].timestamps)
     
     # --- Naive bias (Bari et al) (autowater excluded) ---
-    n_left = ((df_trials.animal_response == LEFT) & (df_trials.non_autowater_trial)).sum()
-    n_right = ((df_trials.animal_response == RIGHT) & (df_trials.non_autowater_trial)).sum()
+    n_left = ((df_trial.animal_response == LEFT) & (df_trial.non_autowater_trial)).sum()
+    n_right = ((df_trial.animal_response == RIGHT) & (df_trial.non_autowater_trial)).sum()
     bias_naive = 2 * (n_right / (n_left + n_right) - 0.5)
 
     # -- Add session stats here --
-    dict_session_stat = {
+    dict_performance = {
         # 1. Basic performance
         # By default, autowater are excluded in sessions stats that are related to foraging efficiency
         # Only those with "_with_autowater" suffix include autowater trials
@@ -254,78 +254,78 @@ def compute_df_session_performance(nwb, df_trials):
         'bias_naive': bias_naive,
         
         # 2. Lick timing (including autowater trials because they are orthogonal to "foraging")
-        'reaction_time_median': df_trials.loc[:, 'reaction_time'].median(),
-        'reaction_time_mean': df_trials.loc[:, 'reaction_time'].mean(),
+        'reaction_time_median': df_trial.loc[:, 'reaction_time'].median(),
+        'reaction_time_mean': df_trial.loc[:, 'reaction_time'].mean(),
         
         'early_lick_rate':  # the proportion of trials with licks during the delay period
-            (df_trials.loc[:, 'n_lick_all_delay_period'] > 0).sum() / n_total_trials,
+            (df_trial.loc[:, 'n_lick_all_delay_period'] > 0).sum() / n_total_trials,
         
         'invalid_lick_ratio':   # in all trials, licks outside gocue-stop window / all licks
-            (all_lick_number - df_trials.loc[:, 'n_lick_all_gocue_stop'].sum()) / all_lick_number,
+            (all_lick_number - df_trial.loc[:, 'n_lick_all_gocue_stop'].sum()) / all_lick_number,
             
         # 3. Lick consistency (during the response period, in finished trials only, including autowater)
         'double_dipping_rate_finished_trials':  # In finished trials, the proportion of trials with licks on both sides 
-            (df_trials.loc[(df_trials.animal_response != IGNORE), 'n_lick_switches_gocue_stop'] > 0).sum() 
-            / (df_trials.animal_response != IGNORE).sum(),
+            (df_trial.loc[(df_trial.animal_response != IGNORE), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / (df_trial.animal_response != IGNORE).sum(),
         'double_dipping_rate_finished_reward_trials':  # finished and reward trials (by definition, not ignored)
-            (df_trials.loc[df_trials.reward, 'n_lick_switches_gocue_stop'] > 0).sum()  
-            / df_trials.reward.sum(),
+            (df_trial.loc[df_trial.reward, 'n_lick_switches_gocue_stop'] > 0).sum()  
+            / df_trial.reward.sum(),
         'double_dipping_rate_finished_noreward_trials':   # finished but non-reward trials
-            (df_trials.loc[(df_trials.animal_response != IGNORE) & (~df_trials.reward), 'n_lick_switches_gocue_stop'] > 0).sum() 
-            / ((df_trials.animal_response != IGNORE) & (~df_trials.reward)).sum(),
+            (df_trial.loc[(df_trial.animal_response != IGNORE) & (~df_trial.reward), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / ((df_trial.animal_response != IGNORE) & (~df_trial.reward)).sum(),
         'lick_consistency_mean_finished_trials': 
-            df_trials.loc[(df_trials.animal_response != IGNORE), 'n_lick_consistency_gocue_stop'].mean(),
+            df_trial.loc[(df_trial.animal_response != IGNORE), 'n_lick_consistency_gocue_stop'].mean(),
         'lick_consistency_mean_finished_reward_trials': 
-            df_trials.loc[df_trials.reward, 'n_lick_consistency_gocue_stop'].mean(),
+            df_trial.loc[df_trial.reward, 'n_lick_consistency_gocue_stop'].mean(),
         'lick_consistency_mean_finished_noreward_trials': 
-            df_trials.loc[(df_trials.animal_response != IGNORE) & (~df_trials.reward), 'n_lick_consistency_gocue_stop'].mean(),
+            df_trial.loc[(df_trial.animal_response != IGNORE) & (~df_trial.reward), 'n_lick_consistency_gocue_stop'].mean(),
     }
         
-    # Generate df_session_stat
-    df_performance = pd.DataFrame(dict_session_stat, index=[0])
-    df_performance.columns = pd.MultiIndex.from_product([['session_stats'], dict_session_stat.keys()],
+    # Generate df_performance
+    df_performance = pd.DataFrame(dict_performance, index=[0])
+    df_performance.columns = pd.MultiIndex.from_product([['session_stats'], dict_performance.keys()],
                                                   names=['type', 'variable'])
     return df_performance
 
 #%%
 def nwb_to_dfs(nwb):
     # -- 1. Trial-based table --
-    df_trials = compute_df_trials(nwb)
+    df_trial = compute_df_trial(nwb)
 
     # -- 2. Session-based tables --
     # 2.1. Metadata
-    df_session_meta = compute_df_session_meta(nwb, df_trials)  # Need df_trials to add additional meta info such as duration_iti_median    
+    df_session_meta = compute_df_session_meta(nwb, df_trial)  # Need df_trial to add additional meta info such as duration_iti_median    
 
     # 2.2. Performance
-    df_session_performance = compute_df_session_performance(nwb, df_trials)
+    df_session_performance = compute_df_session_performance(nwb, df_trial)
     df_session_performance.index = df_session_meta.index  # Make sure the session_key is the same as df_session_meta
     # Merge to df_session
     df_session = pd.concat([df_session_meta, df_session_performance], axis=1)
 
-    # Set trial_key to df_trials
-    trials = df_trials.index.values + 1  # Trial number starts from 1
+    # Set trial_key to df_trial (trial_key = session_key + trial_id)
+    trials = df_trial.index.values + 1  # Trial number starts from 1
     multi_index = pd.MultiIndex.from_tuples(
         [(*df_session_meta.index[0], trial) for trial in trials],
         names=[*df_session_meta.index.names, 'trial']
     )
-    df_trials.index = multi_index
+    df_trial.index = multi_index
     
-    return df_session, df_trials
+    return df_session, df_trial
 
 
 def plot_session_choice_history(nwb):
     
-    df_trials = nwb.trials.to_dataframe()
-    df_trials['trial'] = df_trials.index + 1 # Add an one-based trial number column
+    df_trial = nwb.trials.to_dataframe()
+    df_trial['trial'] = df_trial.index + 1 # Add an one-based trial number column
 
     # Reformat data
-    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
-    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+    choice_history = df_trial.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
+    reward_history = np.vstack([df_trial.rewarded_historyL, df_trial.rewarded_historyR])
+    p_reward = np.vstack([df_trial.reward_probabilityL, df_trial.reward_probabilityR])
 
     # photostim
-    photostim_trials = df_trials.laser_power > 0
-    photostim = [df_trials.trial[photostim_trials], df_trials.laser_power[photostim_trials], []]
+    photostim_trials = df_trial.laser_power > 0
+    photostim = [df_trial.trial[photostim_trials], df_trial.laser_power[photostim_trials], []]
 
     # Plot session
     fig, ax = plot_session_lightweight([np.array([choice_history]), reward_history, p_reward], photostim=photostim)
@@ -373,11 +373,11 @@ def process_one_nwb(nwb_file_name, result_root):
         result_folder = os.path.join(result_root, session_id)
         os.makedirs(result_folder, exist_ok=True)
         
-        # 1. Generate df_session
-        pickle_file_name = result_folder + '/' + f'{session_id}_session_stat.pkl'
-        pd.to_pickle(df_session, pickle_file_name)
-        logging.info(f'{nwb_file_name} 1. df_session done.')
-        
+        # 1. Generate df_session and df_trial
+        pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
+        pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
+        logging.info(f'{nwb_file_name} 1. df_session and df_trial done.')
+                
         # TODO: generate more dfs like this
         
         # 2. Plot choice history
