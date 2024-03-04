@@ -481,6 +481,9 @@ def add_session_number(df):
     
 #%%
 if __name__ == '__main__':
+    import multiprocessing as mp
+    import tqdm
+    
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
@@ -503,12 +506,15 @@ if __name__ == '__main__':
         # to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
         to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
         
-        nwb_file_names = [f for f in nwb_file_names if to_debug in f]
+        # nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logger.info(f'nwb files to process: {nwb_file_names}')
 
-    for nwb_file_name in nwb_file_names:
-        process_one_nwb(nwb_file_name, result_folder)
-    
+    with mp.Pool(processes=mp.cpu_count() - 1) as pool:
+        jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
+        
+        for job in tqdm.tqdm(jobs):
+            job.get()
+
 
 # %%
