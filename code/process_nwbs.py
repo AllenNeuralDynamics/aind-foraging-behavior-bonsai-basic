@@ -16,19 +16,110 @@ from plot.foraging_matplotlib import plot_session_lightweight
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-LEFT, RIGHT = 0, 1
+LEFT, RIGHT, IGNORE = 0, 1, 2
 
-#%%
-def nwb_to_df(nwb):
-    df_trials = nwb.trials.to_dataframe()
+logger = logging.getLogger(__name__)
 
-    # Reformat data
-    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
-    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+def _get_block_starts(p_L, p_R):
+    """Find the indices of block starts
+    """
+    block_start_ind_left = np.where(np.hstack([True, np.diff(p_L) != 0]))[0]
+    block_start_ind_right = np.where(np.hstack([True, np.diff(p_R) != 0]))[0]
+    block_start_ind_effective = np.sort(np.unique(np.hstack([block_start_ind_left, block_start_ind_right])))
+    return block_start_ind_left, block_start_ind_right, block_start_ind_effective
+    
 
-    # -- Session-based table --
-    # - Meta data -
+def _lick_analysis_in_epoch(all_left_licks, all_right_licks, choice, start_time, stop_time):
+    """ Analyze lick-related stats in a given epoch.
+    """
+    lick_stats = {}
+    
+    left_licks = all_left_licks[(all_left_licks > start_time) & (all_left_licks < stop_time)]
+    right_licks = all_right_licks[(all_right_licks > start_time) & (all_right_licks < stop_time)]
+    all_licks = np.hstack([left_licks, right_licks])
+    
+    lick_stats['first_lick'] = all_licks.min() if len(all_licks) > 0 else np.nan
+    lick_stats['n_lick_left'] = len(left_licks)
+    lick_stats['n_lick_right'] = len(right_licks)
+    lick_stats['n_lick_all'] = len(all_licks)
+        
+    # For double-dipping
+    _lick_identity = np.hstack([np.ones(len(left_licks)) * LEFT, np.ones(len(right_licks)) * RIGHT])
+    _lick_identity_sorted = [x for x, _ in sorted(zip(_lick_identity, all_licks), key=lambda pairs: pairs[1])]
+    # Numer of switching side (for example, LRL -> 2 switches)
+    lick_stats['n_lick_switches'] = np.sum(np.diff(_lick_identity_sorted) != 0)
+    # Lick consistency = licks that are consistent with the animal's first lick / all licks (for example, LRL -> 2/3)
+    lick_stats['lick_consistency'] = np.sum(_lick_identity_sorted == choice) / len(_lick_identity_sorted) \
+        if len(_lick_identity_sorted) > 0 else np.nan
+
+    return lick_stats
+
+def compute_df_trial(nwb):
+    """
+    return df_trial that contains the original nwb.trials and other trial stats
+    """
+    
+    df_trial = nwb.trials.to_dataframe().copy()
+    
+    # --- Add some columns to df_trial for convenience ---
+    df_trial['reward'] = False  # All reward, including (collected!) autowater
+    df_trial.loc[(df_trial.rewarded_historyL | df_trial.rewarded_historyR
+                   | df_trial.auto_waterR | df_trial.auto_waterL 
+                    & (df_trial.animal_response != IGNORE))  # because there may be "ignored" autowater...
+                    > 0, 'reward'] = True
+    df_trial['reward_non_autowater'] = False  # Only reward from non-autowater trials (by definition, animal must not have ignored)
+    df_trial.loc[(df_trial.rewarded_historyL | df_trial.rewarded_historyR), 'reward_non_autowater'] = True
+    
+    df_trial['non_autowater_trial'] = False
+    df_trial.loc[(df_trial.auto_waterL==0) & (df_trial.auto_waterR==0), 'non_autowater_trial'] = True
+    df_trial['non_autowater_finished_trial'] = df_trial['non_autowater_trial'] & (df_trial['animal_response'] != IGNORE)
+    
+    # --- Lick-related stats ---    
+    all_left_licks = nwb.acquisition['left_lick_time'].timestamps[:]
+    all_right_licks = nwb.acquisition['right_lick_time'].timestamps[:]
+    
+    # Define the start and stop time for each epoch
+    lick_stats_epochs = {
+        # Name: (start_time_name, stop_time_name)
+        'gocue_stop': ['goCue_start_time', 'stop_time'],
+        'delay_period': ['delay_start_time', 'goCue_start_time'],
+        'iti': ['start_time', 'delay_start_time'],        
+        }
+    
+    # Trial-by-trial counts
+    for i in range(len(df_trial)):
+        for epoch_name, (start_time_name, stop_time_name) in lick_stats_epochs.items():
+            start_time, stop_time = df_trial.loc[i, [start_time_name, stop_time_name]]
+            lick_stats = _lick_analysis_in_epoch(
+                all_left_licks=all_left_licks, 
+                all_right_licks=all_right_licks,
+                choice=df_trial.animal_response[i],
+                start_time=start_time,
+                stop_time=stop_time
+            )
+            
+            df_trial.loc[i, f'duration_{epoch_name}'] = stop_time - start_time
+            df_trial.loc[i, f'n_lick_left_{epoch_name}'] = lick_stats['n_lick_left']
+            df_trial.loc[i, f'n_lick_right_{epoch_name}'] = lick_stats['n_lick_right']
+            df_trial.loc[i, f'n_lick_all_{epoch_name}'] = lick_stats['n_lick_all']
+            df_trial.loc[i, f'n_lick_switches_{epoch_name}'] = lick_stats['n_lick_switches']
+            df_trial.loc[i, f'n_lick_consistency_{epoch_name}'] = lick_stats['lick_consistency']
+            
+            # Special treatment for gocue to stop
+            if epoch_name == 'gocue_stop':
+                df_trial.loc[i, 'reaction_time'] = lick_stats['first_lick'] - df_trial.goCue_start_time[i]
+                
+                # Even in ignore trials, there may be licks outside the response window, 
+                # but they are invalid and should be overriden by NaN
+                if df_trial.animal_response[i] == IGNORE:
+                    df_trial.loc[i, 'reaction_time'] = np.nan
+                    df_trial.loc[i, 'n_valid_licks_left'] = 0
+                    df_trial.loc[i, 'n_valid_licks_right'] = 0
+                    df_trial.loc[i, 'n_valid_licks_all'] = 0
+    return df_trial
+
+def compute_df_session_meta(nwb, df_trial):
+    # -- Key meta data --
     session_start_time_from_meta = nwb.session_start_time
     session_date_from_meta = session_start_time_from_meta.strftime("%Y-%m-%d")
     subject_id_from_meta = nwb.subject.subject_id
@@ -65,94 +156,99 @@ def nwb_to_df(nwb):
     session_index = pd.MultiIndex.from_tuples([(subject_id, session_date, nwb_suffix)], 
                                             names=['subject_id', 'session_date', 'nwb_suffix'])
 
-    # Parse meta info
-    # TODO: when generating nwb, put meta info in nwb.scratch and get rid of the regular expression
-    extra_water, rig = re.search(r"Give extra water.*:(\d*(?:\.\d+)?)? .*?(?:tower|box):(.*)?", nwb.session_description).groups()
-    weight_after_session = re.search(r"Weight after.*:(\d*(?:\.\d+)?)?", nwb.subject.description).groups()[0]
+    # -- Meta info from nwb.scratch --
+    meta_dict = nwb.scratch['metadata'].to_dataframe().iloc[0].to_dict()
     
-    extra_water = float(extra_water) if extra_water !='' else 0
-    weight_after_session = float(weight_after_session) if weight_after_session != '' else np.nan
-    weight_before_session = float(nwb.subject.weight) if nwb.subject.weight != '' else np.nan
-
+    # -- Meta data that are only available after the session --
+    p_L = df_trial.reward_probabilityL.values
+    p_R = df_trial.reward_probabilityR.values
+    p_contrast = np.max([p_L, p_R], axis=0) / np.min([p_L, p_R], axis=0)
+    p_contrast[np.isinf(p_contrast)] = 100  # Cap the contrast at 100
+    
+    # Parse effective block
+    block_start_left, block_start_right, block_start_effective = _get_block_starts(p_L, p_R)
+    if 'uncoupled' not in nwb.protocol.lower():
+        assert all(block_start_left == block_start_right), "Blocks are not fully aligned in a Coupled task!"
+    
+    # -- Pack data --
     dict_meta = {
-        'rig': rig,
+        'rig': meta_dict['box'],
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
+        'notes': nwb.notes,
         'session_start_time': session_start_time_from_meta,
-        'weight_before_session': weight_before_session,
-        'weight_after_session': weight_after_session,
-        'water_during_session': weight_after_session - weight_before_session,
-        'water_extra': extra_water
+        
+        **{key: value for key, value in meta_dict.items() 
+           if key not in ['box' ,
+                          # There are bugs in computing foraging eff online. Let's recalculate in df_session_performance later.
+                          'foraging_efficiency', 'foraging_efficiency_with_actual_random_seed']  
+           },
+        
+        # Block structure
+        'p_reward_sum_mean': np.mean(p_L + p_R),
+        'p_reward_sum_std': np.std(p_L + p_R),
+        'p_reward_sum_median': np.median(p_L + p_R),
+        
+        'p_reward_contrast_mean': np.mean(p_contrast),
+        'p_reware_contrast_median': np.median(p_contrast),
+        
+        'effective_block_length_mean': np.mean(np.diff(block_start_effective)),
+        'effective_block_length_std': np.std(np.diff(block_start_effective)),
+        'effective_block_length_median': np.median(np.diff(block_start_effective)),
+        'effective_block_length_min': np.min(np.diff(block_start_effective)),
+        'effective_block_length_max': np.max(np.diff(block_start_effective)),
+        
+        # Durations
+        'duration_gocue_stop_mean': df_trial.loc[:, 'duration_gocue_stop'].mean(),
+        'duration_gocue_stop_std': df_trial.loc[:, 'duration_gocue_stop'].std(),
+        'duration_gocue_stop_median': df_trial.loc[:, 'duration_gocue_stop'].median(),
+        'duration_gocue_stop_min': df_trial.loc[:, 'duration_gocue_stop'].min(),
+        'duration_gocue_stop_max': df_trial.loc[:, 'duration_gocue_stop'].max(),
+
+        'duration_delay_period_mean': df_trial.loc[:, 'duration_delay_period'].mean(),
+        'duration_delay_period_std': df_trial.loc[:, 'duration_delay_period'].std(),
+        'duration_delay_period_median': df_trial.loc[:, 'duration_delay_period'].median(),
+        'duration_delay_period_min': df_trial.loc[:, 'duration_delay_period'].min(),
+        'duration_delay_period_max': df_trial.loc[:, 'duration_delay_period'].max(),
+
+        'duration_iti_mean': df_trial.loc[:, 'duration_iti'].mean(),
+        'duration_iti_std': df_trial.loc[:, 'duration_iti'].std(),
+        'duration_iti_median': df_trial.loc[:, 'duration_iti'].median(),
+        'duration_iti_min': df_trial.loc[:, 'duration_iti'].min(),
+        'duration_iti_max': df_trial.loc[:, 'duration_iti'].max(),
+        
+        # Reward size
+        'reward_volume_left_mean': df_trial.loc[df_trial.reward, 'reward_size_left'].mean(),
+        'reward_volume_right_mean': df_trial.loc[df_trial.reward, 'reward_size_right'].mean(),
+        
+        # Lickspouts movement range (in um)
+        **{f'lickspout_movement_range_{axis}': 
+            np.ptp(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
+        **{f'lickspout_initial_pos_{axis}': 
+            df_trial[f'lickspout_position_{axis}'][0] for axis in 'xyz'},
+        **{f'lickspout_median_pos_{axis}': 
+            np.median(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
         }
 
-    df_session = pd.DataFrame(dict_meta, 
+    df_meta = pd.DataFrame(dict_meta, 
                             index=session_index,
                             )
     # Use hierarchical index (type = {'metadata', 'session_stats'}, variable = {...}, etc.)
-    df_session.columns = pd.MultiIndex.from_product([['metadata'], dict_meta.keys()],
+    df_meta.columns = pd.MultiIndex.from_product([['metadata'], dict_meta.keys()],
                                                 names=['type', 'variable'])
-
-    # - Compute session-level stats -
-    # TODO: Ideally, all these simple stats could be computed in the GUI, and 
-    # the GUI sends a copy to the meta session.json file and to the nwb file as well.
     
-    total_trials = len(df_trials)
-    finished_trials = np.sum(~np.isnan(choice_history))
-    reward_trials = np.sum(reward_history)
-
-    reward_rate = reward_trials / finished_trials
-
-    # TODO: add more stats
-    # See code here: https://github.com/AllenNeuralDynamics/map-ephys/blob/7a06a5178cc621638d849457abb003151f7234ea/pipeline/foraging_analysis.py#L70C8-L70C8
-    # early_lick_ratio = 
-    # double_dipping_ratio = 
-    # block_num
-    # mean_block_length
-    # mean_reward_sum
-    # mean_reward_contrast
-    # autowater_num
-    # autowater_ratio
-    #
-    # mean_iti
-    # mean_reward_sum
-    # mean_reward_contrast 
-    # ...
-
-
-    foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
-    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate, p_reward[LEFT,:], p_reward[RIGHT, :])
-
-    # -- Add session stats here --
-    dict_session_stat = {
-        'total_trials': total_trials,
-        'finished_trials': finished_trials,
-        'finished_rate': finished_trials / total_trials,
-        'ignore_rate': np.sum(np.isnan(choice_history)) / total_trials,
-        'reward_trials': reward_trials,
-        'reward_rate': reward_rate,
-        'foraging_eff': foraging_eff,
-        
-        # TODO: add more stats here
-    }
-        
-    # Generate df_session_stat
-    df_session_stat = pd.DataFrame(dict_session_stat, 
-                                   index=session_index)
-    df_session_stat.columns = pd.MultiIndex.from_product([['session_stats'], dict_session_stat.keys()],
-                                                        names=['type', 'variable'])
-
     # -- Add automatic training --
-    if 'auto_train_engaged' in df_trials.columns:       
-        df_session['auto_train', 'curriculum_name'] = np.nan if df_trials.auto_train_curriculum_name.mode()[0] == 'none' else df_trials.auto_train_curriculum_name.mode()[0]
-        df_session['auto_train', 'curriculum_version'] = np.nan if df_trials.auto_train_curriculum_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_version.mode()[0]
-        df_session['auto_train', 'curriculum_schema_version'] = np.nan if df_trials.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trials.auto_train_curriculum_schema_version.mode()[0]
-        df_session['auto_train', 'current_stage_actual'] = np.nan if df_trials.auto_train_stage.mode()[0] == 'none' else df_trials.auto_train_stage.mode()[0]
-        df_session['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trials.auto_train_stage_overridden.isna()) else df_trials.auto_train_stage_overridden.mode()[0]
+    if 'auto_train_engaged' in df_trial.columns:       
+        df_meta['auto_train', 'curriculum_name'] = np.nan if df_trial.auto_train_curriculum_name.mode()[0] == 'none' else df_trial.auto_train_curriculum_name.mode()[0]
+        df_meta['auto_train', 'curriculum_version'] = np.nan if df_trial.auto_train_curriculum_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_version.mode()[0]
+        df_meta['auto_train', 'curriculum_schema_version'] = np.nan if df_trial.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_schema_version.mode()[0]
+        df_meta['auto_train', 'current_stage_actual'] = np.nan if df_trial.auto_train_stage.mode()[0] == 'none' else df_trial.auto_train_stage.mode()[0]
+        df_meta['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trial.auto_train_stage_overridden.isna()) else df_trial.auto_train_stage_overridden.mode()[0]
         
         # Add a flag to indicate whether any of the auto train settings were changed during the training
-        df_session['auto_train', 'if_consistent_within_session'] = len(df_trials.groupby(
-            [col for col in df_trials.columns if 'auto_train' in col]
+        df_meta['auto_train', 'if_consistent_within_session'] = len(df_trial.groupby(
+            [col for col in df_trial.columns if 'auto_train' in col]
         )) == 1
     else:
         for field in ['curriculum_name', 
@@ -160,27 +256,135 @@ def nwb_to_df(nwb):
                       'curriculum_schema_version', 
                       'current_stage_actual', 
                       'if_overriden_by_trainer']:
-            df_session['auto_train', field] = None
-                
-    # -- Merge to df_session --
-    df_session = pd.concat([df_session, df_session_stat], axis=1)
+            df_meta['auto_train', field] = None
+    
+    return df_meta
 
-    return df_session
+def compute_df_session_performance(nwb, df_trial):
+    # TODO: Ideally, all these simple stats could be computed in the GUI, and 
+    # the GUI sends a copy to the meta session.json file and to the nwb file as well.
+    
+    n_total_trials = len(df_trial)
+    n_finished_trials = (df_trial.animal_response != IGNORE).sum()
+    
+    # Actual foraging trials (autowater excluded)
+    n_total_trials_non_autowater = df_trial.non_autowater_trial.sum()
+    n_finished_trials_non_autowater = df_trial.non_autowater_finished_trial.sum()
+        
+    n_reward_trials_non_autowater = df_trial.reward_non_autowater.sum()
+    reward_rate_non_autowater_finished = n_reward_trials_non_autowater / n_finished_trials_non_autowater if n_finished_trials_non_autowater > 0 else np.nan
+
+    # Foraging efficiency (autowater and ignored trials must be excluded)
+    foraging_eff_func = foraging_eff_baiting if 'bait' in nwb.protocol.lower() else foraging_eff_no_baiting
+    foraging_eff, foraging_eff_random_seed = foraging_eff_func(reward_rate_non_autowater_finished, 
+                                                               df_trial.reward_probabilityL[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_probabilityR[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_random_number_left[df_trial.non_autowater_finished_trial].values, 
+                                                               df_trial.reward_random_number_right[df_trial.non_autowater_finished_trial].values
+                                                               )
+
+    all_lick_number = len(nwb.acquisition['left_lick_time'].timestamps) + len(nwb.acquisition['right_lick_time'].timestamps)
+    
+    # --- Naive bias (Bari et al) (autowater excluded) ---
+    n_left = ((df_trial.animal_response == LEFT) & (df_trial.non_autowater_trial)).sum()
+    n_right = ((df_trial.animal_response == RIGHT) & (df_trial.non_autowater_trial)).sum()
+    bias_naive = 2 * (n_right / (n_left + n_right) - 0.5) if n_left + n_right > 0 else np.nan
+
+    # -- Add session stats here --
+    dict_performance = {
+        # 1. Basic performance
+        # By default, autowater are excluded in sessions stats that are related to foraging efficiency
+        # Only those with "_with_autowater" suffix include autowater trials
+        'total_trials_with_autowater': n_total_trials,
+        'finished_trials_with_autowater': n_finished_trials,
+        'finished_rate_with_autowater': n_finished_trials / n_total_trials,
+        'ignore_rate_with_autowater': 1 - n_finished_trials / n_total_trials,
+        
+        'total_trials': n_total_trials_non_autowater,
+        'finished_trials': n_finished_trials_non_autowater,
+        'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
+        'ignore_rate': 1 - n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
+        
+        'reward_trials': n_reward_trials_non_autowater,
+        'reward_rate': reward_rate_non_autowater_finished,
+        'foraging_eff': foraging_eff,
+        'foraging_eff_random_seed': foraging_eff_random_seed,
+        
+        'bias_naive': bias_naive,
+        
+        # 2. Lick timing (including autowater trials because they are orthogonal to "foraging")
+        'reaction_time_median': df_trial.loc[:, 'reaction_time'].median(),
+        'reaction_time_mean': df_trial.loc[:, 'reaction_time'].mean(),
+        
+        'early_lick_rate':  # the proportion of trials with licks during the delay period
+            (df_trial.loc[:, 'n_lick_all_delay_period'] > 0).sum() / n_total_trials,
+        
+        'invalid_lick_ratio':   # in all trials, licks outside gocue-stop window / all licks
+            (all_lick_number - df_trial.loc[:, 'n_lick_all_gocue_stop'].sum()) / all_lick_number,
+            
+        # 3. Lick consistency (during the response period, in finished trials only, including autowater)
+        'double_dipping_rate_finished_trials':  # In finished trials, the proportion of trials with licks on both sides 
+            (df_trial.loc[(df_trial.animal_response != IGNORE), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / (df_trial.animal_response != IGNORE).sum(),
+        'double_dipping_rate_finished_reward_trials':  # finished and reward trials (by definition, not ignored)
+            (df_trial.loc[df_trial.reward, 'n_lick_switches_gocue_stop'] > 0).sum()  
+            / df_trial.reward.sum(),
+        'double_dipping_rate_finished_noreward_trials':   # finished but non-reward trials
+            (df_trial.loc[(df_trial.animal_response != IGNORE) & (~df_trial.reward), 'n_lick_switches_gocue_stop'] > 0).sum() 
+            / ((df_trial.animal_response != IGNORE) & (~df_trial.reward)).sum(),
+        'lick_consistency_mean_finished_trials': 
+            df_trial.loc[(df_trial.animal_response != IGNORE), 'n_lick_consistency_gocue_stop'].mean(),
+        'lick_consistency_mean_finished_reward_trials': 
+            df_trial.loc[df_trial.reward, 'n_lick_consistency_gocue_stop'].mean(),
+        'lick_consistency_mean_finished_noreward_trials': 
+            df_trial.loc[(df_trial.animal_response != IGNORE) & (~df_trial.reward), 'n_lick_consistency_gocue_stop'].mean(),
+    }
+        
+    # Generate df_performance
+    df_performance = pd.DataFrame(dict_performance, index=[0])
+    df_performance.columns = pd.MultiIndex.from_product([['session_stats'], dict_performance.keys()],
+                                                  names=['type', 'variable'])
+    return df_performance
+
+#%%
+def nwb_to_dfs(nwb):
+    # -- 1. Trial-based table --
+    df_trial = compute_df_trial(nwb)
+
+    # -- 2. Session-based tables --
+    # 2.1. Metadata
+    df_session_meta = compute_df_session_meta(nwb, df_trial)  # Need df_trial to add additional meta info such as duration_iti_median    
+
+    # 2.2. Performance
+    df_session_performance = compute_df_session_performance(nwb, df_trial)
+    df_session_performance.index = df_session_meta.index  # Make sure the session_key is the same as df_session_meta
+    # Merge to df_session
+    df_session = pd.concat([df_session_meta, df_session_performance], axis=1)
+
+    # Set trial_key to df_trial (trial_key = session_key + trial_id)
+    trials = df_trial.index.values + 1  # Trial number starts from 1
+    multi_index = pd.MultiIndex.from_tuples(
+        [(*df_session_meta.index[0], trial) for trial in trials],
+        names=[*df_session_meta.index.names, 'trial']
+    )
+    df_trial.index = multi_index
+    
+    return df_session, df_trial
 
 
 def plot_session_choice_history(nwb):
     
-    df_trials = nwb.trials.to_dataframe()
-    df_trials['trial'] = df_trials.index + 1 # Add an one-based trial number column
+    df_trial = nwb.trials.to_dataframe()
+    df_trial['trial'] = df_trial.index + 1 # Add an one-based trial number column
 
     # Reformat data
-    choice_history = df_trials.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trials.rewarded_historyL, df_trials.rewarded_historyR])
-    p_reward = np.vstack([df_trials.reward_probabilityL, df_trials.reward_probabilityR])
+    choice_history = df_trial.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
+    reward_history = np.vstack([df_trial.rewarded_historyL, df_trial.rewarded_historyR])
+    p_reward = np.vstack([df_trial.reward_probabilityL, df_trial.reward_probabilityR])
 
     # photostim
-    photostim_trials = df_trials.laser_power > 0
-    photostim = [df_trials.trial[photostim_trials], df_trials.laser_power[photostim_trials], []]
+    photostim_trials = df_trial.laser_power > 0
+    photostim = [df_trial.trial[photostim_trials], df_trial.laser_power[photostim_trials], []]
 
     # Plot session
     fig, ax = plot_session_lightweight([np.array([choice_history]), reward_history, p_reward], photostim=photostim)
@@ -212,40 +416,40 @@ def process_one_nwb(nwb_file_name, result_root):
     '''
     Process one nwb file and save the results to result_folder_root/{subject}_{session_date}/
     '''
-    logging.info(f'{nwb_file_name} processing...')
+    logger.info(f'{nwb_file_name} processing...')
     
     try:
         io = NWBHDF5IO(nwb_file_name, mode='r')
         nwb = io.read()
-        df_session = nwb_to_df(nwb)
+        df_session, df_trial = nwb_to_dfs(nwb)
         
         # Create folder if not exist
-        subject_id = df_session.index[0][0]
-        session_date = df_session.index[0][1]
-        nwb_suffix = df_session.index[0][2]
+        subject_id = df_session.index.get_level_values('subject_id')[0]
+        session_date = df_session.index.get_level_values('session_date')[0]
+        nwb_suffix = df_session.index.get_level_values('nwb_suffix')[0]
         session_id = f'{subject_id}_{session_date}{f"_{nwb_suffix}" if nwb_suffix else ""}'
         
         result_folder = os.path.join(result_root, session_id)
         os.makedirs(result_folder, exist_ok=True)
         
-        # 1. Generate df_session
-        pickle_file_name = result_folder + '/' + f'{session_id}_session_stat.pkl'
-        pd.to_pickle(df_session, pickle_file_name)
-        logging.info(f'{nwb_file_name} 1. df_session done.')
-        
+        # 1. Generate df_session and df_trial
+        pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
+        pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
+        logger.info(f'{nwb_file_name} 1. df_session and df_trial done.')
+                
         # TODO: generate more dfs like this
         
         # 2. Plot choice history
         fig = plot_session_choice_history(nwb)
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
-        logging.info(f'{nwb_file_name} 2. plot choice history done.')
+        logger.info(f'{nwb_file_name} 2. plot choice history done.')
         plt.close(fig)        
         
         # TODO: generate more plots like this
         
     except Exception as e:
-        logging.error(f'{nwb_file_name} failed!!', exc_info=True)
+        logger.error(f'{nwb_file_name} failed!!', exc_info=True)
         log_error_file(nwb_file_name, result_root)
     return
 
@@ -277,29 +481,56 @@ def add_session_number(df):
     
 #%%
 if __name__ == '__main__':
+    import multiprocessing as mp
+    import tqdm
+    
+    # ----------------------------
+    LOCAL_MANUAL_OVERRIDE = False   # If true, local batch process all nwb files in /data/foraging_nwb_bonsai with n_CPUs = 16
+    # ----------------------------
+    
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
     result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
-    
-    logging.basicConfig(filename=f"{result_folder}/capsule.log",
-                                level=logging.INFO,
-                                format='%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
-                                datefmt='%Y-%m-%d %H:%M:%S')
 
+    # Create a file handler with the specified file path
+    logger.setLevel(level=logging.INFO)
+    file_handler = logging.FileHandler(f"{result_folder}/capsule.log")
+    formatter = logging.Formatter('%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s', 
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
-    if if_debug_mode:
-        to_debug = '703548_2024-02-05_08-11-00.nwb'  # During debugging, only process this file
+    if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
+        # to_debug = '697929_2024-02-22_08-38-30.nwb' # coupled first session example
+        # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
+        to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
-    logging.info(f'nwb files to process: {nwb_file_names}')
+    logger.info(f'nwb files to process: {nwb_file_names}')
 
-    for nwb_file_name in nwb_file_names:
-        process_one_nwb(nwb_file_name, result_folder)
+    # Note that in Code Ocean, mp.cpu_count() is not necessarily the number of cores available in this session.
+    # For example, even in the environment setting with 4 cores, mp.cpu_count() returns 16.
+    # To really speed up when manually re-do all sessions, make sure to set core = 16 or more in the environment setting.``
+    try:
+        n_cpus = int(sys.argv[1])  # Input from pipeline
+    except:
+        n_cpus = 16 if LOCAL_MANUAL_OVERRIDE else 1
     
+    if n_cpus > 1:
+        logger.info(f'Starting multiprocessing with {n_cpus} cores...')
+        with mp.Pool(processes=n_cpus) as pool:
+            jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
+            for job in tqdm.tqdm(jobs):
+                job.get()
+    else:
+        logger.info('Starting single processing...')
+        for nwb_file_name in tqdm.tqdm(nwb_file_names):
+            process_one_nwb(nwb_file_name, result_folder)
+
 
 # %%

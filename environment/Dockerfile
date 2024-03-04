@@ -17,7 +17,8 @@ RUN pip install -U --no-cache-dir \
     zarr==2.14.2 \
     ipykernel \
     s3fs \
-    awscli
+    awscli \
+    aind_codeocean_api==0.2.3
 
 ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
 	
