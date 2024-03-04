@@ -37,13 +37,16 @@ def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_n
         return for_eff_optimal, np.nan
         
     # --- Optimal-actual (uses the actual random numbers by simulation)
-    block_trans = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[0].tolist()
+    block_start_ind_left = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[0].tolist()
+    block_start_ind_right = np.where(np.diff(np.hstack([np.inf, p_Rs, np.inf])))[0].tolist()
+    block_start_ind_effective = np.sort(np.unique(np.hstack([block_start_ind_left, block_start_ind_right])))
+        
     reward_refills = [p_Ls >= random_number_L, p_Rs >= random_number_R]
     reward_optimal_random_seed = 0
     for_eff_optimal_random_seed = np.nan
     
     # Generate optimal choice pattern
-    for b_start, b_end in zip(block_trans[:-1], block_trans[1:]):
+    for b_start, b_end in zip(block_start_ind_effective[:-1], block_start_ind_effective[1:]):
         p_max = np.max([p_Ls[b_start], p_Rs[b_start]])
         p_min = np.min([p_Ls[b_start], p_Rs[b_start]])
         side_max = np.argmax([p_Ls[b_start], p_Rs[b_start]])
