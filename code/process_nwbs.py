@@ -221,9 +221,12 @@ def compute_df_session_meta(nwb, df_trial):
         'reward_volume_right_mean': df_trial.loc[df_trial.reward, 'reward_size_right'].mean(),
         
         # Lickspouts movement range (in um)
-        'lickspout_movement_range_x': np.ptp(df_trial.lickspout_position_x),
-        'lickspout_movement_range_y': np.ptp(df_trial.lickspout_position_y),
-        'lickspout_movement_range_z': np.ptp(df_trial.lickspout_position_z),
+        **{f'lickspout_movement_range_{axis}': 
+            np.ptp(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
+        **{f'lickspout_initial_pos_{axis}': 
+            df_trial[f'lickspout_position_{axis}'][0] for axis in 'xyz'},
+        **{f'lickspout_median_pos_{axis}': 
+            np.median(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
         }
 
     df_meta = pd.DataFrame(dict_meta, 
