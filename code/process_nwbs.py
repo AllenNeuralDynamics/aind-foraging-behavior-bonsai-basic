@@ -506,9 +506,9 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
-        # to_debug = '697929_2024-02-22_08-38-30.nwb' # first session example
-        # to_debug = '713557_2024-03-01_08-50-40.nwb' # well-trained example
-        to_debug = '699982_2023-11-06_11-59-58.nwb'
+        # to_debug = '697929_2024-02-22_08-38-30.nwb' # coupled first session example
+        # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
+        to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logger.info(f'nwb files to process: {nwb_file_names}')
@@ -522,11 +522,13 @@ if __name__ == '__main__':
         n_cpus = 16 if LOCAL_MANUAL_OVERRIDE else 1
     
     if n_cpus > 1:
+        logger.info(f'Starting multiprocessing with {n_cpus} cores...')
         with mp.Pool(processes=n_cpus) as pool:
             jobs = [pool.apply_async(process_one_nwb, args=(nwb_file_name, result_folder)) for nwb_file_name in nwb_file_names]
             for job in tqdm.tqdm(jobs):
                 job.get()
     else:
+        logger.info('Starting single processing...')
         for nwb_file_name in tqdm.tqdm(nwb_file_names):
             process_one_nwb(nwb_file_name, result_folder)
 
