@@ -40,6 +40,7 @@ def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_n
     block_trans = np.where(np.diff(np.hstack([np.inf, p_Ls, np.inf])))[0].tolist()
     reward_refills = [p_Ls >= random_number_L, p_Rs >= random_number_R]
     reward_optimal_random_seed = 0
+    for_eff_optimal_random_seed = np.nan
     
     # Generate optimal choice pattern
     for b_start, b_end in zip(block_trans[:-1], block_trans[1:]):
@@ -66,7 +67,5 @@ def foraging_eff_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_n
         
         if reward_optimal_random_seed:                
             for_eff_optimal_random_seed = reward_rate / (reward_optimal_random_seed / len(p_Ls))
-        else:
-            for_eff_optimal_random_seed = np.nan
     
     return for_eff_optimal, for_eff_optimal_random_seed
