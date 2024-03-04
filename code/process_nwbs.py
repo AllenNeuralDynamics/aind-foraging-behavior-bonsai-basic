@@ -215,6 +215,15 @@ def compute_df_session_meta(nwb, df_trial):
         'duration_iti_median': df_trial.loc[:, 'duration_iti'].median(),
         'duration_iti_min': df_trial.loc[:, 'duration_iti'].min(),
         'duration_iti_max': df_trial.loc[:, 'duration_iti'].max(),
+        
+        # Reward size
+        'reward_volume_left_mean': df_trial.loc[df_trial.reward, 'reward_size_left'].mean(),
+        'reward_volume_right_mean': df_trial.loc[df_trial.reward, 'reward_size_right'].mean(),
+        
+        # Lickspouts movement range (in um)
+        'lickspout_movement_range_x': np.ptp(df_trial.lickspout_position_x),
+        'lickspout_movement_range_y': np.ptp(df_trial.lickspout_position_y),
+        'lickspout_movement_range_z': np.ptp(df_trial.lickspout_position_z),
         }
 
     df_meta = pd.DataFrame(dict_meta, 
