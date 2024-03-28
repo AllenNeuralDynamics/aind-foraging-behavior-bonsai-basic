@@ -12,7 +12,8 @@ if [ ! -d "/.vscode/extensions" ]
        code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension ms-python.python
        code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension njpwerner.autodocstring
        code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension KevinRose.vsc-python-indent
-       code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension sugatoray.vscode-git-extension-pack
+       code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension mhutchie.git-graph
+       code-server --disable-telemetry --extensions-dir=/.vscode/extensions --install-extension zhuangtongfa.material-theme
 
        else
           echo "code-server not found"
