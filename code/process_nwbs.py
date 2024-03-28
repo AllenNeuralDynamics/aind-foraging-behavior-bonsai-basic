@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 from matplotlib import pyplot as plt
 
+from analysis.analysis_wrapper import compute_logistic_regression
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
 from plot.foraging_matplotlib import plot_session_lightweight
 
@@ -361,7 +362,7 @@ def nwb_to_dfs(nwb):
     # Merge to df_session
     df_session = pd.concat([df_session_meta, df_session_performance], axis=1)
 
-    # Set trial_key to df_trial (trial_key = session_key + trial_id)
+    # === Set trial_key to df_trial (trial_key = session_key + trial_id) ===
     trials = df_trial.index.values + 1  # Trial number starts from 1
     multi_index = pd.MultiIndex.from_tuples(
         [(*df_session_meta.index[0], trial) for trial in trials],
@@ -432,21 +433,30 @@ def process_one_nwb(nwb_file_name, result_root):
         result_folder = os.path.join(result_root, session_id)
         os.makedirs(result_folder, exist_ok=True)
         
-        # 1. Generate df_session and df_trial
+        # --- 1. Generate df_session and df_trial ---
         pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
         pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
         logger.info(f'{nwb_file_name} 1. df_session and df_trial done.')
-                
-        # TODO: generate more dfs like this
-        
-        # 2. Plot choice history
+                        
+        # --- 2. Plot choice history ---
         fig = plot_session_choice_history(nwb)
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
         logger.info(f'{nwb_file_name} 2. plot choice history done.')
-        plt.close(fig)        
+        plt.close(fig)
         
-        # TODO: generate more plots like this
+        # --- 3. Logistic regression ---
+        df_session_logistic_regression, dict_fig = compute_logistic_regression(nwb)
+        df_session_logistic_regression.index = df_session.index  # Make sure the session_key is the same as df_session
+        pd.to_pickle(df_session_logistic_regression, 
+                     result_folder + '/' + f'{session_id}_df_session_logistic_regression.pkl')
+        for key, fig in dict_fig.items():
+            fig.savefig(result_folder + '/' + f'{session_id}_logistic_regression_{key}.png',
+                        bbox_inches='tight')
+            plt.close(fig)
+        logger.info(f'{nwb_file_name} 3. Logistic regression done.')
+    
+        # TODO: add more analyses like this
         
     except Exception as e:
         logger.error(f'{nwb_file_name} failed!!', exc_info=True)
