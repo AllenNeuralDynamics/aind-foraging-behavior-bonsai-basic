@@ -433,30 +433,35 @@ def process_one_nwb(nwb_file_name, result_root):
         result_folder = os.path.join(result_root, session_id)
         os.makedirs(result_folder, exist_ok=True)
         
-        # --- 1. Generate df_session and df_trial ---
-        pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
-        pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
-        logger.info(f'{nwb_file_name} 1. df_session and df_trial done.')
-                        
-        # --- 2. Plot choice history ---
+        # --- 1. Plot choice history ---
         fig = plot_session_choice_history(nwb)
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
-        logger.info(f'{nwb_file_name} 2. plot choice history done.')
+        logger.info(f'{nwb_file_name} 1. plot choice history done.')
         plt.close(fig)
         
-        # --- 3. Logistic regression ---
+        # --- 2. Logistic regression ---
         df_session_logistic_regression, dict_fig = compute_logistic_regression(nwb)
         df_session_logistic_regression.index = df_session.index  # Make sure the session_key is the same as df_session
         pd.to_pickle(df_session_logistic_regression, 
                      result_folder + '/' + f'{session_id}_df_session_logistic_regression.pkl')
+        # Merge df_session_logistic_regression to df_session 
+        # (TODO: this should happen elsewhere, see https://github.com/orgs/AllenNeuralDynamics/projects/70/views/4?pane=issue&itemId=57992307)
+        df_session = pd.concat([df_session, df_session_logistic_regression], axis=1)
+        
         for key, fig in dict_fig.items():
             fig.savefig(result_folder + '/' + f'{session_id}_logistic_regression_{key}.png',
                         bbox_inches='tight')
             plt.close(fig)
-        logger.info(f'{nwb_file_name} 3. Logistic regression done.')
+        logger.info(f'{nwb_file_name} 2. Logistic regression done.')
     
         # TODO: add more analyses like this
+        
+        # --- Final. Generate df_session and df_trial ---
+        pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
+        pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
+        logger.info(f'{nwb_file_name} 3. df_session and df_trial done.')
+
         
     except Exception as e:
         logger.error(f'{nwb_file_name} failed!!', exc_info=True)
