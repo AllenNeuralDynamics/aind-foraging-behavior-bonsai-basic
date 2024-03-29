@@ -443,6 +443,9 @@ def process_one_nwb(nwb_file_name, result_root):
         # --- 2. Logistic regression ---
         df_session_logistic_regression, dict_fig = compute_logistic_regression(nwb)
         df_session_logistic_regression.index = df_session.index  # Make sure the session_key is the same as df_session
+        df_session_logistic_regression.columns = pd.MultiIndex.from_product(
+            [['logistic_regression'], 
+             df_session_logistic_regression.columns])
         pd.to_pickle(df_session_logistic_regression, 
                      result_folder + '/' + f'{session_id}_df_session_logistic_regression.pkl')
         # Merge df_session_logistic_regression to df_session 
@@ -457,7 +460,7 @@ def process_one_nwb(nwb_file_name, result_root):
     
         # TODO: add more analyses like this
         
-        # --- Final. Generate df_session and df_trial ---
+        # --- Final. Save df_session and df_trial ---
         pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
         pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
         logger.info(f'{nwb_file_name} 3. df_session and df_trial done.')
