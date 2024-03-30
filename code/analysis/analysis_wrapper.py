@@ -48,7 +48,7 @@ def compute_logistic_regression(nwb) -> Tuple[
                                 penalty='l2',
                                 Cs=10,
                                 cv=10,
-                                n_jobs_cross_validation=-1,
+                                n_jobs_cross_validation=1,
                                 n_bootstrap_iters=1000, 
                                 n_bootstrap_samplesize=None,)
         ax = plot_logistic_regression(dict_logistic_result)
