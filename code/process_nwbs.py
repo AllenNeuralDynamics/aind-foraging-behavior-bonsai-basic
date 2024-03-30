@@ -382,13 +382,18 @@ def plot_session_choice_history(nwb):
     choice_history = df_trial.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
     reward_history = np.vstack([df_trial.rewarded_historyL, df_trial.rewarded_historyR])
     p_reward = np.vstack([df_trial.reward_probabilityL, df_trial.reward_probabilityR])
+    autowater_offered_history = np.vstack([df_trial.auto_waterL, df_trial.auto_waterR])
 
     # photostim
     photostim_trials = df_trial.laser_power > 0
     photostim = [df_trial.trial[photostim_trials], df_trial.laser_power[photostim_trials], []]
 
     # Plot session
-    fig, ax = plot_session_lightweight([np.array([choice_history]), reward_history, p_reward], photostim=photostim)
+    fig, ax = plot_session_lightweight(choice_history=np.array([choice_history]), 
+                                       reward_history_non_autowater=reward_history, 
+                                       p_reward=p_reward,
+                                       autowater_offered_history=autowater_offered_history,
+                                       photostim=photostim)
     
     return fig
 
@@ -524,9 +529,9 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
-        # to_debug = '697929_2024-02-22_08-38-30.nwb' # coupled first session example
+        to_debug = '697929_2024-02-22_08-38-30.nwb' # coupled first session example
         # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
-        to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
+        # to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
     
     logger.info(f'nwb files to process: {nwb_file_names}')
