@@ -543,6 +543,9 @@ if __name__ == '__main__':
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
+    # Send logging to terminal as well
+    logger.addHandler(logging.StreamHandler())
+
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
