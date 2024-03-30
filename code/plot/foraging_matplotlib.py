@@ -96,7 +96,8 @@ def plot_session_lightweight(choice_history,
                 color=base_color, label='Base rew. prob.', lw=1.5)
 
         # Smoothed choice history
-        y = moving_average(choice_history, smooth_factor) / moving_average(~np.isnan(choice_history), smooth_factor)
+        y = moving_average(choice_history, smooth_factor) / (moving_average(~np.isnan(choice_history), smooth_factor) + 1e-6)
+        y[y > 100] = np.nan
         x = np.arange(0, len(y)) + int(smooth_factor / 2) + 1
         ax_1.plot(*(x, y) if not vertical else [*(y, x)],
                 linewidth=1.5, color='black', label='Choice (smooth = %g)' % smooth_factor)

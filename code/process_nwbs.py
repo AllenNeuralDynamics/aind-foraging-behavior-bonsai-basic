@@ -74,6 +74,8 @@ def compute_df_trial(nwb):
     df_trial['non_autowater_trial'] = False
     df_trial.loc[(df_trial.auto_waterL==0) & (df_trial.auto_waterR==0), 'non_autowater_trial'] = True
     df_trial['non_autowater_finished_trial'] = df_trial['non_autowater_trial'] & (df_trial['animal_response'] != IGNORE)
+    df_trial['ignored_non_autowater'] = df_trial['non_autowater_trial'] & (df_trial['animal_response'] == IGNORE)
+    df_trial['ignored_autowater'] = ~df_trial['non_autowater_trial'] & (df_trial['animal_response'] == IGNORE)
     
     # --- Lick-related stats ---    
     all_left_licks = nwb.acquisition['left_lick_time'].timestamps[:]
@@ -163,8 +165,8 @@ def compute_df_session_meta(nwb, df_trial):
     # -- Meta data that are only available after the session --
     p_L = df_trial.reward_probabilityL.values
     p_R = df_trial.reward_probabilityR.values
-    p_contrast = np.max([p_L, p_R], axis=0) / np.min([p_L, p_R], axis=0)
-    p_contrast[np.isinf(p_contrast)] = 100  # Cap the contrast at 100
+    p_contrast = np.max([p_L, p_R], axis=0) / (np.min([p_L, p_R], axis=0) + 1e-6)
+    p_contrast[p_contrast > 100] = 100  # Cap the contrast at 100
     
     # Parse effective block
     block_start_left, block_start_right, block_start_effective = _get_block_starts(p_L, p_R)
@@ -300,9 +302,12 @@ def compute_df_session_performance(nwb, df_trial):
         'finished_trials_with_autowater': n_finished_trials,
         'finished_rate_with_autowater': n_finished_trials / n_total_trials,
         'ignore_rate_with_autowater': 1 - n_finished_trials / n_total_trials,
+        'autowater_collected': (~df_trial.non_autowater_trial & (df_trial.animal_response != IGNORE)).sum(),
+        'autowater_ignored': (~df_trial.non_autowater_trial & (df_trial.animal_response == IGNORE)).sum(),
         
         'total_trials': n_total_trials_non_autowater,
         'finished_trials': n_finished_trials_non_autowater,
+        'ignored_trials': n_total_trials_non_autowater - n_finished_trials_non_autowater,
         'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
         'ignore_rate': 1 - n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
         
@@ -389,13 +394,13 @@ def plot_session_choice_history(nwb):
     photostim = [df_trial.trial[photostim_trials], df_trial.laser_power[photostim_trials], []]
 
     # Plot session
-    fig, ax = plot_session_lightweight(choice_history=np.array([choice_history]), 
+    fig, axes = plot_session_lightweight(choice_history=np.array([choice_history]), 
                                        reward_history_non_autowater=reward_history, 
                                        p_reward=p_reward,
                                        autowater_offered_history=autowater_offered_history,
                                        photostim=photostim)
     
-    return fig
+    return fig, axes
 
 
 def log_error_file(file_name, result_root):
@@ -439,7 +444,22 @@ def process_one_nwb(nwb_file_name, result_root):
         os.makedirs(result_folder, exist_ok=True)
         
         # --- 1. Plot choice history ---
-        fig = plot_session_choice_history(nwb)
+        fig, axes = plot_session_choice_history(nwb)
+        # add some session info
+        axes[0].text(0, 1.05, 
+                f'{session_id}, {df_session.metadata.rig.iloc[0]}, {df_session.metadata.user_name.iloc[0]}\n'
+                f'Total trials {df_session.session_stats.total_trials_with_autowater.iloc[0]} = '
+                f'FORAGING finished {df_session.session_stats.finished_trials.iloc[0]} '
+                f'ignored {df_session.session_stats.ignored_trials.iloc[0]} + '
+                f'AUTOWATER collected {df_session.session_stats.autowater_collected.iloc[0]} '
+                f'ignored {df_session.session_stats.autowater_ignored.iloc[0]}\n'
+                f'FORAGING finished rate {df_session.session_stats.finished_rate.iloc[0]:.2%}, '
+                f'efficiency {df_session.session_stats.foraging_eff.iloc[0]:.3f} '
+                f'(r.s. {df_session.session_stats.foraging_eff_random_seed[0]:.3f}), '
+                f'bias naive {df_session.session_stats.bias_naive.iloc[0]:.3f}\n',
+                fontsize=8, 
+                transform=axes[0].transAxes
+        )
         fig.savefig(result_folder + '/' + f'{session_id}_choice_history.png',
                     bbox_inches='tight')
         logger.info(f'{nwb_file_name} 1. plot choice history done.')
@@ -542,7 +562,7 @@ if __name__ == '__main__':
     try:
         n_cpus = int(sys.argv[1])  # Input from pipeline
     except:
-        n_cpus = 16 if LOCAL_MANUAL_OVERRIDE else 1
+        n_cpus = mp.cpu_count() if LOCAL_MANUAL_OVERRIDE else 1
     
     if n_cpus > 1:
         logger.info(f'Starting multiprocessing with {n_cpus} cores...')
