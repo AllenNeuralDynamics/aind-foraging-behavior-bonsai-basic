@@ -58,8 +58,13 @@ def compute_logistic_regression(nwb) -> Tuple[
         for logistic_var in df_beta_exp_fit.index:
             for exp_fit_var in set(df_beta_exp_fit.columns.get_level_values(0)):
                 df_session_logistic_regression.loc[
-                    0, f'{model_name}_{logistic_var}_{exp_fit_var}'
+                    0, f'logistic_{model_name}_{logistic_var}_{exp_fit_var}'
                 ] = df_beta_exp_fit.loc[logistic_var, (exp_fit_var, 'fitted')]
+                
+        # Add bias
+        df_session_logistic_regression.loc[
+                    0, f'logistic_{model_name}_bias'
+                ] = dict_logistic_result['df_beta'].loc['bias']['cross_validation'].values[0]
 
         dict_figures[model_name] = ax.figure
     
