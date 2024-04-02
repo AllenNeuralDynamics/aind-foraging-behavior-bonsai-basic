@@ -188,6 +188,8 @@ def compute_df_session_meta(nwb, df_trial):
                           'foraging_efficiency', 'foraging_efficiency_with_actual_random_seed']  
            },
         
+        'weight_after_ratio': meta_dict['weight_after'] / meta_dict['base_weight'],
+        
         # Block structure
         'p_reward_sum_mean': np.mean(p_L + p_R),
         'p_reward_sum_std': np.std(p_L + p_R),
@@ -292,6 +294,7 @@ def compute_df_session_performance(nwb, df_trial):
     n_left = ((df_trial.animal_response == LEFT) & (df_trial.non_autowater_trial)).sum()
     n_right = ((df_trial.animal_response == RIGHT) & (df_trial.non_autowater_trial)).sum()
     bias_naive = 2 * (n_right / (n_left + n_right) - 0.5) if n_left + n_right > 0 else np.nan
+    finished_rate = n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan
 
     # -- Add session stats here --
     dict_performance = {
@@ -308,13 +311,16 @@ def compute_df_session_performance(nwb, df_trial):
         'total_trials': n_total_trials_non_autowater,
         'finished_trials': n_finished_trials_non_autowater,
         'ignored_trials': n_total_trials_non_autowater - n_finished_trials_non_autowater,
-        'finished_rate': n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
-        'ignore_rate': 1 - n_finished_trials_non_autowater / n_total_trials_non_autowater if n_total_trials_non_autowater > 0 else np.nan,
+        'finished_rate': finished_rate,
+        'ignore_rate': 1 - finished_rate,
         
         'reward_trials': n_reward_trials_non_autowater,
         'reward_rate': reward_rate_non_autowater_finished,
         'foraging_eff': foraging_eff,
         'foraging_eff_random_seed': foraging_eff_random_seed,
+        
+        'foraging_performance': foraging_eff * finished_rate,
+        'foraging_performance_random_seed': foraging_eff_random_seed * finished_rate,
         
         'bias_naive': bias_naive,
         
