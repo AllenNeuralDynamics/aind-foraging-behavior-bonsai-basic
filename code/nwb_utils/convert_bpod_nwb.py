@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 from dateutil.tz import tzlocal
 
-from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior
+from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior, file
 from pynwb.file import Subject
 from scipy.io import loadmat
 
@@ -451,12 +451,56 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
                                name='bpod_backup_video_frame_mapping',
                                description=bpod_nwb.scratch['video_frame_mapping'].description)
 
-    # --- Add ephys, if exists ---            
+    # --- Add ephys, if exists ---
+    # NWB is a nightmare to work with!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # You cannot copy the fields directly; you have to create each field from scratch and do deep copy manually
+    # or am I missing something??
     if bpod_nwb.units is not None:
-        bonsai_nwb.units = bpod_nwb.units
-        bonsai_nwb.devices = bpod_nwb.devices
-        bonsai_nwb.electrode_groups = bpod_nwb.electrode_groups
-        bonsai_nwb.electrodes = bpod_nwb.electrodes
+        
+        # Add devices
+        for k, v in bpod_nwb.devices.items():
+            bonsai_nwb.create_device(name=k)
+            
+        # Add electrodes_groups
+        for k, v in bpod_nwb.electrode_groups.items():
+            bonsai_nwb.create_electrode_group(
+                name=v.name,
+                description=v.description,
+                device=bonsai_nwb.get_device(v.device.name),
+                location=v.location,
+            )
+            
+        # Add electrodes
+        for extra_column in ['shank_row', 'electrode_id', 'shank_col', 'ccf_annotation', 'shank']:
+            bonsai_nwb.add_electrode_column(
+                name=bpod_nwb.electrodes[extra_column].name,
+                description=bpod_nwb.electrodes[extra_column].description,
+            )
+        for e in bpod_nwb.electrodes:
+            e = e.iloc[0]
+            bonsai_nwb.add_electrode(
+                group=bonsai_nwb.get_electrode_group(e.group.name),
+                **{f: e[f] for f in e.keys() if f not in ['group']}
+            )
+        
+        # Add units. Fianllay!!
+        bonsai_nwb.units = file.Units(
+            name=bpod_nwb.units.name,
+            description=bpod_nwb.units.description,
+        )
+        for col in bpod_nwb.units.colnames:
+            bonsai_nwb.add_unit_column(
+                name=bpod_nwb.units[col].name,
+                description=bpod_nwb.units[col].description,
+            )
+        for u in bpod_nwb.units:
+            u = u.iloc[0]
+            bonsai_nwb.add_unit(
+                **{f: u[f] for f in u.keys()},
+                spike_times_index=np.nan,
+                electrodes_index=np.nan,
+            )
+        
     
     # --- Save NWB file in bonsai_nwb format ---
     if len(bonsai_nwb.trials) > 0:
