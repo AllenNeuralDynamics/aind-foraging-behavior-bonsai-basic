@@ -54,10 +54,12 @@ TASK_MAPPER = {
 
 def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     
-    # prepare
+    # Time info
     session_start_time = bpod_nwb.session_start_time.replace(tzinfo=tzlocal())
+    session_run_time_in_min = meta_dict_from_pkl['session_length_in_hrs'] * 60
+    session_end_time = session_start_time + timedelta(minutes=session_run_time_in_min)
 
-    ### session related information ###
+    # --- Create a new NWB file ---
     bonsai_nwb = NWBFile(
         session_description='Session end time:' + ' unknown',  
         identifier=str(uuid4()),  # required
@@ -76,54 +78,38 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         protocol=TASK_MAPPER[meta_dict_from_pkl['task']],  # optional
     )
 
-    #######  Animal information #######
-    # need to get more subject information through subject_id
+    # --- Subject ---
     bonsai_nwb.subject = Subject(
-        subject_id=obj.ID,
-        description='Animal name:'+obj.ID+'  Weight after(g):'+obj.WeightAfter,
+        subject_id=bpod_nwb.subject.subject_id,
+        description=bpod_nwb.subject.description, # Animal's alias (h2o)
         species="Mus musculus",
-        weight=obj.WeightBefore,
+        weight=meta_dict_from_pkl['session_weight'], # weight before the session
+        date_of_birth=bpod_nwb.subject.date_of_birth, 
     )
-    # print(nwbfile)
     
     ### Add some meta data to the scratch (rather than the session description) ###
-    # Handle water info (with better names)
-    BS_TotalReward = _get_field(obj, 'BS_TotalReward')
-    # Turn uL to mL if the value is too large
-    water_in_session_foraging = BS_TotalReward / 1000 if BS_TotalReward > 5.0 else BS_TotalReward 
-    # Old name "ExtraWater" goes first because old json has a wrong Suggested Water
-    water_after_session = float(_get_field(obj, 
-                                           field_list=['ExtraWater', 'SuggestedWater'], 
-                                           reject_list=['']
-                                           ))
-    water_day_total = float(_get_field(obj, 'TotalWater', reject_list=['']))
-    water_in_session_total = water_day_total - water_after_session
-    water_in_session_manual = water_in_session_total - water_in_session_foraging
-    
-    session_run_time_in_min = meta_dict_from_pkl['session_length_in_hrs'] * 60
-    
     metadata = {
         # Meta
-        'box': _get_field(obj, ['box', 'Tower']),
-        'session_end_time': session_start_time + timedelta(minutes=session_run_time_in_min),
-        'session_run_time_in_min': session_run_time_in_min,
+        'box': meta_dict_from_pkl['rig'] + '_bpod', # Add _bpod suffix to distinguish from bonsai
+        'session_end_time': session_end_time,
+        'session_run_time_in_min': session_run_time_in_min, 
         
         # Water (all in mL)
-        'water_in_session_foraging': water_in_session_foraging, 
-        'water_in_session_manual': water_in_session_manual,
-        'water_in_session_total':  water_in_session_total,
-        'water_after_session': water_after_session,
-        'water_day_total': water_day_total,
+        'water_in_session_foraging': np.nan, # Not directly available in old bpod nwb
+        'water_in_session_manual': np.nan, # Not directly available in old bpod nwb
+        'water_in_session_total':  meta_dict_from_pkl['water_earned'],
+        'water_after_session': meta_dict_from_pkl['water_extra'],
+        'water_day_total': meta_dict_from_pkl['water_total'],
 
         # Weight
-        'base_weight': float(_get_field(obj, 'BaseWeight', reject_list=[''])),
-        'target_weight': float(_get_field(obj, 'TargetWeight', reject_list=[''])),
-        'target_weight_ratio': float(_get_field(obj, 'TargetRatio', reject_list=[''])),
-        'weight_after': float(_get_field(obj, 'WeightAfter', reject_list=[''])),
+        'base_weight': meta_dict_from_pkl['start_weight'],
+        'target_weight': np.nan,
+        'target_weight_ratio': np.nan,
+        'weight_after': meta_dict_from_pkl['session_weight'] + meta_dict_from_pkl['water_earned'],
         
         # Performance
-        'foraging_efficiency': _get_field(obj, 'B_for_eff_optimal'),
-        'foraging_efficiency_with_actual_random_seed': _get_field(obj, 'B_for_eff_optimal_random_seed'),
+        'foraging_efficiency': np.nan,
+        'foraging_efficiency_with_actual_random_seed': meta_dict_from_pkl['foraging_eff'],
         
         # A copy of all fields from df_session.pkl so that we keep as much info from datajoint as possible
         **{f"from_bpod_pkl_{key}": value for key, value in meta_dict_from_pkl.items()},
@@ -141,7 +127,9 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
                         description="Some important session-wise meta data")
 
 
-    #######       Add trial     #######
+    # ------- Add trial -------
+    # I'm keeping the same fields as the bonsai nwb while filling in bpod info as much as possible
+    
     ## behavior events (including trial start/end time; left/right lick time; give left/right reward time) ##
     bonsai_nwb.add_trial_column(name='animal_response', description=f'The response of the animal. 0, left choice; 1, right choice; 2, no response')
     bonsai_nwb.add_trial_column(name='rewarded_historyL', description=f'The reward history of left lick port')
@@ -217,127 +205,75 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_trial_column(name='reward_size_right', description=f'Right reward size (uL)')
 
     ## start adding trials ##
-    # to see if we have harp timestamps
-    if not hasattr(obj, 'B_TrialEndTimeHarp'):
-        Harp = ''
-    elif obj.B_TrialEndTimeHarp == []: # for json file transferred from mat data
-        Harp = ''
-    else:
-        Harp = 'Harp'
-    for i in range(len(obj.B_TrialEndTime)):
-        Sc = obj.B_SelectedCondition[i] # the optogenetics conditions
-        if Sc == 0:
-            LaserWavelengthC = 0
-            LaserLocationC = 0
-            LaserPowerC = 0
-            LaserDurationC = 0
-            LaserConditionC = 0
-            LaserConditionProC = 0
-            LaserStartC = 0
-            LaserStartOffsetC = 0
-            LaserEndC = 0
-            LaserEndOffsetC = 0
-            LaserProtocolC = 0
-            LaserFrequencyC = 0
-            LaserRampingDownC = 0
-            LaserPulseDurC = 0
-        else:
-            # if there is no training paramters history stored (for old Bonsai behavior control)
-            if not hasattr(obj, 'TP_Laser_1'):
-                if getattr(obj, f'TP_Laser_{Sc}')[i] == 'Blue':
-                    LaserWavelengthC = 473
-                elif getattr(obj, f'TP_Laser_{Sc}')[i] == 'Red':
-                    LaserWavelengthC = 647
-                elif getattr(obj, f'TP_Laser_{Sc}')[i] == 'Green':
-                    LaserWavelengthC = 547
-                LaserLocationC = getattr(obj, f'TP_Location_{Sc}')[i]
-                LaserPowerC = getattr(obj, f'TP_LaserPower_{Sc}')[i]
-                LaserDurationC = getattr(obj, f'TP_Duration_{Sc}')[i]
-                LaserConditionC = getattr(obj, f'TP_Condition_{Sc}')[i]
-                LaserConditionProC = getattr(obj, f'TP_ConditionP_{Sc}')[i]
-                LaserStartC = getattr(obj, f'TP_LaserStart_{Sc}')[i]
-                LaserStartOffsetC = getattr(obj, f'TP_OffsetStart_{Sc}')[i]
-                LaserEndC = getattr(obj, f'TP_LaserEnd_{Sc}')[i]
-                LaserEndOffsetC = getattr(obj, f'TP_OffsetEnd_{Sc}')[i]
-                LaserProtocolC = getattr(obj, f'TP_Protocol_{Sc}')[i]
-                LaserFrequencyC = getattr(obj, f'TP_Frequency_{Sc}')[i]
-                LaserRampingDownC = getattr(obj, f'TP_RD_{Sc}')[i]
-                LaserPulseDurC = getattr(obj, f'TP_PulseDur_{Sc}')[i]
-         
-        if Harp == '':
-            goCue_start_time_t = getattr(obj, f'B_GoCueTime')[i]  # Use CPU time
-        else:
-            if hasattr(obj, f'B_GoCueTimeHarp'):
-                goCue_start_time_t = getattr(obj, f'B_GoCueTimeHarp')[i]  # Use Harp time, old format
-            else:
-                goCue_start_time_t = getattr(obj, f'B_GoCueTimeSoundCard')[i]  # Use Harp time, new format
-            
-        bonsai_nwb.add_trial(start_time=getattr(obj, f'B_TrialStartTime{Harp}')[i], 
-                          stop_time=getattr(obj, f'B_TrialEndTime{Harp}')[i],
-                          animal_response=obj.B_AnimalResponseHistory[i],
-                          rewarded_historyL=obj.B_RewardedHistory[0][i],
-                          rewarded_historyR=obj.B_RewardedHistory[1][i],
-                          reward_outcome_time=obj.B_RewardOutcomeTime[i],
-                          delay_start_time=getattr(obj, f'B_DelayStartTime{Harp}')[i],
-                          goCue_start_time=goCue_start_time_t,
-                          bait_left=obj.B_BaitHistory[0][i],
-                          bait_right=obj.B_BaitHistory[1][i],
-                          base_reward_probability_sum=float(obj.TP_BaseRewardSum[i]),
-                          reward_probabilityL=float(obj.B_RewardProHistory[0][i]),
-                          reward_probabilityR=float(obj.B_RewardProHistory[1][i]),
-                          reward_random_number_left=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[0],
-                          reward_random_number_right=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[1],
-                          left_valve_open_time=float(obj.TP_LeftValue[i]),
-                          right_valve_open_time=float(obj.TP_RightValue[i]),
-                          block_beta=float(obj.TP_BlockBeta[i]),
-                          block_min=float(obj.TP_BlockMin[i]),
-                          block_max=float(obj.TP_BlockMax[i]),
-                          min_reward_each_block=float(obj.TP_BlockMinReward[i]),
-                          delay_beta=float(obj.TP_DelayBeta[i]),
-                          delay_min=float(obj.TP_DelayMin[i]),
-                          delay_max=float(obj.TP_DelayMax[i]),
-                          delay_duration=obj.B_DelayHistory[i],
-                          ITI_beta=float(obj.TP_ITIBeta[i]),
-                          ITI_min=float(obj.TP_ITIMin[i]),
-                          ITI_max=float(obj.TP_ITIMax[i]),
-                          ITI_duration=obj.B_ITIHistory[i],
-                          response_duration=float(obj.TP_ResponseTime[i]),
-                          reward_consumption_duration=float(obj.TP_RewardConsumeTime[i]),
-                          auto_waterL=obj.B_AutoWaterTrial[0][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],   # Back-compatible with old autowater format
-                          auto_waterR=obj.B_AutoWaterTrial[1][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],
-                          laser_on_trial=obj.B_LaserOnTrial[i],
-                          laser_wavelength=LaserWavelengthC,
-                          laser_location=LaserLocationC,
-                          laser_power=LaserPowerC,
-                          laser_duration=LaserDurationC,
-                          laser_condition=LaserConditionC,
-                          laser_condition_probability=LaserConditionProC,
-                          laser_start=LaserStartC,
-                          laser_start_offset=LaserStartOffsetC,
-                          laser_end=LaserEndC,
-                          laser_end_offset=LaserEndOffsetC,
-                          laser_protocol=LaserProtocolC,
-                          laser_frequency=LaserFrequencyC,
-                          laser_rampingdown=LaserRampingDownC,
-                          laser_pulse_duration=LaserPulseDurC,
 
-                          # add all auto training parameters (eventually should be in session.json)
-                          auto_train_engaged=_get_field(obj, 'TP_auto_train_engaged', index=i),
-                          auto_train_curriculum_name=_get_field(obj, 'TP_auto_train_curriculum_name', index=i, default=None) or 'none',
-                          auto_train_curriculum_version=_get_field(obj, 'TP_auto_train_curriculum_version', index=i, default=None) or 'none',
-                          auto_train_curriculum_schema_version=_get_field(obj, 'TP_auto_train_curriculum_schema_version', index=i, default=None) or 'none',
-                          auto_train_stage=_get_field(obj, 'TP_auto_train_stage', index=i, default=None) or 'none',
-                          auto_train_stage_overridden=_get_field(obj, 'TP_auto_train_stage_overridden', index=i, default=None) or np.nan,
-                          
-                          # lickspout position
-                          lickspout_position_x=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[0],
-                          lickspout_position_y=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[1],
-                          lickspout_position_z=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[2],
-                          
-                          # reward size
-                          reward_size_left=float(_get_field(obj, 'TP_LeftValue_volume', index=i)),
-                          reward_size_right=float(_get_field(obj, 'TP_RightValue_volume', index=i)),
-                        )
+    for i in range(len(obj.B_TrialEndTime)):
+        bonsai_nwb.add_trial(
+            start_time=getattr(obj, f'B_TrialStartTime{Harp}')[i], 
+            stop_time=getattr(obj, f'B_TrialEndTime{Harp}')[i],
+            animal_response=obj.B_AnimalResponseHistory[i],
+            rewarded_historyL=obj.B_RewardedHistory[0][i],
+            rewarded_historyR=obj.B_RewardedHistory[1][i],
+            reward_outcome_time=obj.B_RewardOutcomeTime[i],
+            delay_start_time=getattr(obj, f'B_DelayStartTime{Harp}')[i],
+            goCue_start_time=goCue_start_time_t,
+            bait_left=obj.B_BaitHistory[0][i],
+            bait_right=obj.B_BaitHistory[1][i],
+            base_reward_probability_sum=float(obj.TP_BaseRewardSum[i]),
+            reward_probabilityL=float(obj.B_RewardProHistory[0][i]),
+            reward_probabilityR=float(obj.B_RewardProHistory[1][i]),
+            reward_random_number_left=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[0],
+            reward_random_number_right=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[1],
+            left_valve_open_time=float(obj.TP_LeftValue[i]),
+            right_valve_open_time=float(obj.TP_RightValue[i]),
+            block_beta=float(obj.TP_BlockBeta[i]),
+            block_min=float(obj.TP_BlockMin[i]),
+            block_max=float(obj.TP_BlockMax[i]),
+            min_reward_each_block=float(obj.TP_BlockMinReward[i]),
+            delay_beta=float(obj.TP_DelayBeta[i]),
+            delay_min=float(obj.TP_DelayMin[i]),
+            delay_max=float(obj.TP_DelayMax[i]),
+            delay_duration=obj.B_DelayHistory[i],
+            ITI_beta=float(obj.TP_ITIBeta[i]),
+            ITI_min=float(obj.TP_ITIMin[i]),
+            ITI_max=float(obj.TP_ITIMax[i]),
+            ITI_duration=obj.B_ITIHistory[i],
+            response_duration=float(obj.TP_ResponseTime[i]),
+            reward_consumption_duration=float(obj.TP_RewardConsumeTime[i]),
+            auto_waterL=obj.B_AutoWaterTrial[0][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],   # Back-compatible with old autowater format
+            auto_waterR=obj.B_AutoWaterTrial[1][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],
+            laser_on_trial=obj.B_LaserOnTrial[i],
+            laser_wavelength=LaserWavelengthC,
+            laser_location=LaserLocationC,
+            laser_power=LaserPowerC,
+            laser_duration=LaserDurationC,
+            laser_condition=LaserConditionC,
+            laser_condition_probability=LaserConditionProC,
+            laser_start=LaserStartC,
+            laser_start_offset=LaserStartOffsetC,
+            laser_end=LaserEndC,
+            laser_end_offset=LaserEndOffsetC,
+            laser_protocol=LaserProtocolC,
+            laser_frequency=LaserFrequencyC,
+            laser_rampingdown=LaserRampingDownC,
+            laser_pulse_duration=LaserPulseDurC,
+
+            # add all auto training parameters (eventually should be in session.json)
+            auto_train_engaged=_get_field(obj, 'TP_auto_train_engaged', index=i),
+            auto_train_curriculum_name=_get_field(obj, 'TP_auto_train_curriculum_name', index=i, default=None) or 'none',
+            auto_train_curriculum_version=_get_field(obj, 'TP_auto_train_curriculum_version', index=i, default=None) or 'none',
+            auto_train_curriculum_schema_version=_get_field(obj, 'TP_auto_train_curriculum_schema_version', index=i, default=None) or 'none',
+            auto_train_stage=_get_field(obj, 'TP_auto_train_stage', index=i, default=None) or 'none',
+            auto_train_stage_overridden=_get_field(obj, 'TP_auto_train_stage_overridden', index=i, default=None) or np.nan,
+            
+            # lickspout position
+            lickspout_position_x=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[0],
+            lickspout_position_y=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[1],
+            lickspout_position_z=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[2],
+            
+            # reward size
+            reward_size_left=float(_get_field(obj, 'TP_LeftValue_volume', index=i)),
+            reward_size_right=float(_get_field(obj, 'TP_RightValue_volume', index=i)),
+        )
 
 
     #######  Other time series  #######
