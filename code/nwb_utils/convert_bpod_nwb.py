@@ -6,7 +6,7 @@ from uuid import uuid4
 import numpy as np
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import re
 import logging
 import pandas as pd
@@ -124,7 +124,11 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         'foraging_efficiency_with_actual_random_seed': meta_dict_from_pkl['foraging_eff'],
         
         # A copy of all fields from df_session.pkl so that we keep as much info from datajoint as possible
-        **{f"bpod_backup_{key}": value for key, value in meta_dict_from_pkl.items()},
+        **{f"bpod_backup_{key}": (value 
+                                    if not isinstance(value, (datetime, date)) else
+                                    value.strftime(r"%Y-%m-%d %H:%M:%S.%s")
+                                  )
+           for key, value in meta_dict_from_pkl.items()},
     }
 
     # Turn the metadata into a DataFrame in order to add it to the scratch
