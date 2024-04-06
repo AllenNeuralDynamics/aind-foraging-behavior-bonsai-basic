@@ -54,6 +54,9 @@ def get_meta_dict_from_session_pkl(bpod_session_id):
 def _get_trial_event_time(bpod_nwb, event_name, trial_start_time, trial_stop_time):
     """ Get trialized event time from bpod nwb
     """
+    if event_name not in nwb.acquisition['BehavioralEvents'].time_series:
+        return np.nan
+    
     all_event_times = nwb.acquisition['BehavioralEvents'][event_name].timestamps[:]
     this_trial = np.where((trial_start_time <= all_event_times) 
                           & (all_event_times <= trial_stop_time)
@@ -236,7 +239,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     ## start adding trials ##
     df_trials = bpod_nwb.trials.to_dataframe()
     dict_trials = df_trials.to_dict(orient='records')
-    has_photostim = any(df_trials.photostim_power > 0)
+    has_photostim = all(df_trials.photostim_power != 'null')
     
     for d in dict_trials:
         bonsai_nwb.add_trial(
@@ -275,11 +278,11 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
             auto_waterR=d['auto_water'] & (d['choice']=='right'),
             
             # photostim
-            laser_on_trial=d['photostim_power'] > 0,
+            laser_on_trial=d['photostim_power'] > 0 if has_photostim else np.nan,
             laser_wavelength=473 if has_photostim else np.nan,
             laser_location=meta_dict_from_pkl['photostim_location'] if has_photostim else np.nan,
-            laser_power=d['photostim_power'],
-            laser_duration=d['photostim_duration'],
+            laser_power=d['photostim_power'] if has_photostim else np.nan,
+            laser_duration=d['photostim_duration'] if has_photostim else np.nan,
             laser_condition=np.nan,
             laser_condition_probability=np.nan,
             laser_start=d['photostim_bpod_timer_align_to'] if has_photostim else np.nan,
@@ -386,7 +389,10 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(PhotometryRisingTimeHarp)
     
     # Add optogenetics time stamps
-    B_OptogeneticsTimeHarp = bpod_nwb.acquisition['BehavioralEvents']['laserLon'].timestamps[:]
+    if 'laserLon' in bpod_nwb.acquisition['BehavioralEvents'].time_series:
+        B_OptogeneticsTimeHarp = bpod_nwb.acquisition['BehavioralEvents']['laserLon'].timestamps[:]
+    else:
+        B_OptogeneticsTimeHarp = [np.nan]
     OptogeneticsTimeHarp = TimeSeries(
         name="optogenetics_time",
         unit="second",
@@ -429,7 +435,7 @@ if __name__ == '__main__':
     logger.addHandler(logging.StreamHandler())
     
     nwb_folder = '/root/capsule/data/s3_foraging_all_nwb/'
-    bpod_nwb_file = 'XY_23/XY_23_20230508_52.nwb'
+    bpod_nwb_file = 'FOR12/FOR12_20191108_1.nwb'
 
     io = NWBHDF5IO(nwb_folder + bpod_nwb_file, mode='r')
     nwb = io.read()
