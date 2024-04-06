@@ -440,7 +440,7 @@ def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file):
         meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
         return nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
     except Exception as e:
-        logger.error(e)
+        logger.error(f'{bpod_nwb_file}: {e}')
         return "uncaught_error"
    
 
