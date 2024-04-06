@@ -327,6 +327,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     B_LeftRewardDeliveryTime = df_trials_bonsai['reward_outcome_time'][
         df_trials_bonsai['rewarded_historyL']
     ].values
+    if not len(B_LeftRewardDeliveryTime):
+        B_LeftRewardDeliveryTime = [np.nan]
     LeftRewardDeliveryTime = TimeSeries(
         name="left_reward_delivery_time",
         unit="second",
@@ -339,6 +341,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     B_RightRewardDeliveryTime = df_trials_bonsai['reward_outcome_time'][
         df_trials_bonsai['rewarded_historyR']
     ].values
+    if not len(B_RightRewardDeliveryTime):
+        B_RightRewardDeliveryTime = [np.nan]
     RightRewardDeliveryTime = TimeSeries(
         name="right_reward_delivery_time",
         unit="second",
@@ -350,6 +354,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
 
     # Lick time
     B_LeftLickTime = bpod_nwb.acquisition['BehavioralEvents']['left_lick'].timestamps[:]
+    if not len(B_LeftLickTime):
+        B_LeftLickTime = [np.nan]
     LeftLickTime = TimeSeries(
         name="left_lick_time",
         unit="second",
@@ -360,6 +366,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(LeftLickTime)
     
     B_RightLickTime = bpod_nwb.acquisition['BehavioralEvents']['right_lick'].timestamps[:]
+    if not len(B_RightLickTime):
+        B_RightLickTime = [np.nan]
     RightLickTime = TimeSeries(
         name="right_lick_time",
         unit="second",
@@ -394,6 +402,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     if 'laserLon' in bpod_nwb.acquisition['BehavioralEvents'].time_series:
         B_OptogeneticsTimeHarp = bpod_nwb.acquisition['BehavioralEvents']['laserLon'].timestamps[:]
     else:
+        B_OptogeneticsTimeHarp = [np.nan]
+    if not len(B_OptogeneticsTimeHarp):
         B_OptogeneticsTimeHarp = [np.nan]
     OptogeneticsTimeHarp = TimeSeries(
         name="optogenetics_time",
@@ -459,23 +469,28 @@ if __name__ == '__main__':
     # Send logging to terminal as well
     logger.addHandler(logging.StreamHandler())
         
-
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
-    bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
+    # bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     
-    n_cpus = 16
-    results = []
+    # For debugging
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/668546/668546_20230622_3.nwb']
     
-    logger.info(f'Starting multiprocessing with {n_cpus} cores...')
-    with mp.Pool(processes=n_cpus) as pool:
-        jobs = [pool.apply_async(convert_one_bpod_to_bonsai_nwb, args=(nwb_file_name,)) 
-                for nwb_file_name in bpod_nwb_files]
+    if len(bpod_nwb_files) == 1:
+        convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])
+    else:
+        n_cpus = 16
+        results = []
         
-        for job in tqdm.tqdm(jobs):
-            results.append(job.get())
-        
-    logger.info(f'\nProcessed {len(results)} files: '
-             f'{results.count("success")} successfully converted; '             
-             f'{results.count("empty_trials")} empty_trials, '
-             f'{results.count("uncaught_error")} uncaught error\n\n')
+        logger.info(f'Starting multiprocessing with {n_cpus} cores...')
+        with mp.Pool(processes=n_cpus) as pool:
+            jobs = [pool.apply_async(convert_one_bpod_to_bonsai_nwb, args=(nwb_file_name,)) 
+                    for nwb_file_name in bpod_nwb_files]
+            
+            for job in tqdm.tqdm(jobs):
+                results.append(job.get())
+            
+        logger.info(f'\nProcessed {len(results)} files: '
+                f'{results.count("success")} successfully converted; '             
+                f'{results.count("empty_trials")} empty_trials, '
+                f'{results.count("uncaught_error")} uncaught error\n\n')
     
