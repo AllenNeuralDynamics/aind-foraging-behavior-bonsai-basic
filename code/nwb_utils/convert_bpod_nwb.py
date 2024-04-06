@@ -8,6 +8,7 @@ import json
 import os
 from datetime import datetime, timedelta, date
 import re
+import glob
 import logging
 import pandas as pd
 from dateutil.tz import tzlocal
@@ -16,6 +17,7 @@ from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior
 from pynwb.file import Subject
 from scipy.io import loadmat
 
+bpod_nwb_folder = R'/root/capsule/data/s3_foraging_all_nwb/'
 save_folder=R'/root/capsule/results'
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,7 @@ def get_meta_dict_from_session_pkl(bpod_session_id):
     return meta_dict
 
 
-def _get_trial_event_time(bpod_nwb, event_name, trial_start_time, trial_stop_time):
+def _get_trial_event_time(nwb, event_name, trial_start_time, trial_stop_time):
     """ Get trialized event time from bpod nwb
     """
     if event_name not in nwb.acquisition['BehavioralEvents'].time_series:
@@ -430,16 +432,43 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         return 'empty_trials'
 
 
+def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file):
+    io = NWBHDF5IO(bpod_nwb_file, mode='r')
+    nwb = io.read()
+    
+    try:
+        meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
+        return nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
+    except Exception as e:
+        logger.error(e)
+        return "uncaught_error"
+   
+
 if __name__ == '__main__':
     logger.setLevel(logging.DEBUG)
     logger.addHandler(logging.StreamHandler())
     
-    nwb_folder = '/root/capsule/data/s3_foraging_all_nwb/'
-    bpod_nwb_file = 'FOR12/FOR12_20191108_1.nwb'
+    import multiprocessing as mp
+    import tqdm
 
-    io = NWBHDF5IO(nwb_folder + bpod_nwb_file, mode='r')
-    nwb = io.read()
+    # By default, process all nwb files under /data/foraging_nwb_bonsai folder
+    bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     
-    meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
-    nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
+    bpod_nwb_files = bpod_nwb_files[:16]
+
+    n_cpus = 16
+    results = []
+    
+    logger.info(f'Starting multiprocessing with {n_cpus} cores...')
+    with mp.Pool(processes=n_cpus) as pool:
+        jobs = [pool.apply_async(convert_one_bpod_to_bonsai_nwb, args=(nwb_file_name,)) 
+                for nwb_file_name in bpod_nwb_files]
+        
+        for job in tqdm.tqdm(jobs):
+            results.append(job.get())
+        
+    logger.info(f'\nProcessed {len(results)} files: '
+             f'{results.count("success")} successfully converted; '             
+             f'{results.count("empty_trials")} empty_trials, '
+             f'{results.count("uncaught_error")} uncaught error\n\n')
     
