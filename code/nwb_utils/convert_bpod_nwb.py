@@ -113,7 +113,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     metadata = {
         # Meta
         'box': meta_dict_from_pkl['rig'] + '_bpod', # Add _bpod suffix to distinguish from bonsai
-        'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s"),
+        'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s") if isinstance(session_end_time, (date, datetime)) else np.nan,
         'session_run_time_in_min': session_run_time_in_min, 
         
         # Water (all in mL)
@@ -474,7 +474,7 @@ if __name__ == '__main__':
     # bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     
     # For debugging
-    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/FOR10/FOR10_20191024_142.nwb']
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/XY_03/XY_03_20221010_3.nwb']
     
     if len(bpod_nwb_files) == 1:
         convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])
