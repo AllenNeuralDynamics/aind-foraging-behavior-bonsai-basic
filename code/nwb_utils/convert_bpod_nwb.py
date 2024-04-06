@@ -12,7 +12,7 @@ import logging
 import pandas as pd
 from dateutil.tz import tzlocal
 
-from pynwb import NWBHDF5IO, NWBFile, TimeSeries
+from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior
 from pynwb.file import Subject
 from scipy.io import loadmat
 
@@ -103,7 +103,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     metadata = {
         # Meta
         'box': meta_dict_from_pkl['rig'] + '_bpod', # Add _bpod suffix to distinguish from bonsai
-        'session_end_time': session_end_time,
+        'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s"),
         'session_run_time_in_min': session_run_time_in_min, 
         
         # Water (all in mL)
@@ -305,25 +305,14 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         )
 
 
-    #######  Other time series  #######
+    # ----  Other time series ----
     #left/right lick time; give left/right reward time
-    if getattr(obj, f'B_LeftRewardDeliveryTime{Harp}') == []:
-        B_LeftRewardDeliveryTime = [np.nan]
-    else:
-        B_LeftRewardDeliveryTime = getattr(obj, f'B_LeftRewardDeliveryTime{Harp}')
-    if getattr(obj, f'B_RightRewardDeliveryTime{Harp}') == []:
-        B_RightRewardDeliveryTime = [np.nan]
-    else:
-        B_RightRewardDeliveryTime = getattr(obj, f'B_RightRewardDeliveryTime{Harp}')
-    if obj.B_LeftLickTime == []:
-        B_LeftLickTime = [np.nan]
-    else:
-        B_LeftLickTime = obj.B_LeftLickTime
-    if obj.B_RightLickTime == []:
-        B_RightLickTime = [np.nan]
-    else:
-        B_RightLickTime = obj.B_RightLickTime
-
+    df_trials_bonsai = bonsai_nwb.trials.to_dataframe()
+    
+    # Reward time
+    B_LeftRewardDeliveryTime = df_trials_bonsai['reward_outcome_time'][
+        df_trials_bonsai['rewarded_historyL']
+    ].values
     LeftRewardDeliveryTime = TimeSeries(
         name="left_reward_delivery_time",
         unit="second",
@@ -332,14 +321,21 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         description='The reward delivery time of the left lick port'
     )
     bonsai_nwb.add_acquisition(LeftRewardDeliveryTime)
+    
+    B_RightRewardDeliveryTime = df_trials_bonsai['reward_outcome_time'][
+        df_trials_bonsai['rewarded_historyR']
+    ].values
     RightRewardDeliveryTime = TimeSeries(
         name="right_reward_delivery_time",
         unit="second",
         timestamps=B_RightRewardDeliveryTime,
         data=np.ones(len(B_RightRewardDeliveryTime)).tolist(),
         description='The reward delivery time of the right lick port'
-    )
+    )    
     bonsai_nwb.add_acquisition(RightRewardDeliveryTime)
+
+    # Lick time
+    B_LeftLickTime = bpod_nwb.acquisition['BehavioralEvents']['left_lick'].timestamps[:]
     LeftLickTime = TimeSeries(
         name="left_lick_time",
         unit="second",
@@ -348,6 +344,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         description='The time of left licks'
     )
     bonsai_nwb.add_acquisition(LeftLickTime)
+    
+    B_RightLickTime = bpod_nwb.acquisition['BehavioralEvents']['right_lick'].timestamps[:]
     RightLickTime = TimeSeries(
         name="right_lick_time",
         unit="second",
@@ -358,10 +356,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(RightLickTime)
 
     # Add photometry time stamps
-    if not hasattr(obj, 'B_PhotometryFallingTimeHarp') or obj.B_PhotometryFallingTimeHarp == []:
-        B_PhotometryFallingTimeHarp = [np.nan]
-    else:
-        B_PhotometryFallingTimeHarp = obj.B_PhotometryFallingTimeHarp
+    B_PhotometryFallingTimeHarp = [np.nan]
     PhotometryFallingTimeHarp = TimeSeries(
         name="FIP_falling_time",
         unit="second",
@@ -371,10 +366,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     )
     bonsai_nwb.add_acquisition(PhotometryFallingTimeHarp)
 
-    if not hasattr(obj, 'B_PhotometryRisingTimeHarp') or obj.B_PhotometryRisingTimeHarp == []:
-        B_PhotometryRisingTimeHarp = [np.nan]
-    else:
-        B_PhotometryRisingTimeHarp = obj.B_PhotometryRisingTimeHarp
+    B_PhotometryRisingTimeHarp = [np.nan]
     PhotometryRisingTimeHarp = TimeSeries(
         name="FIP_rising_time",
         unit="second",
@@ -385,23 +377,37 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(PhotometryRisingTimeHarp)
     
     # Add optogenetics time stamps
-    if not hasattr(obj, 'B_OptogeneticsTimeHarp') or obj.B_OptogeneticsTimeHarp == []:
-        B_OptogeneticsTimeHarp = [np.nan]
-    else:
-        B_OptogeneticsTimeHarp = obj.B_OptogeneticsTimeHarp
+    B_OptogeneticsTimeHarp = bpod_nwb.acquisition['BehavioralEvents']['laserLon'].timestamps[:]
     OptogeneticsTimeHarp = TimeSeries(
         name="optogenetics_time",
         unit="second",
         timestamps=B_OptogeneticsTimeHarp,
         data=np.ones(len(B_OptogeneticsTimeHarp)).tolist(),
-        description='Optogenetics time (from Harp)'
+        description='Optogenetics time (from NI)'
     )
     bonsai_nwb.add_acquisition(OptogeneticsTimeHarp)
-
-    # save NWB file
-    base_filename = os.path.splitext(os.path.basename(fname))[0] + '.nwb'
+    
+    # Add all bpod_nwb time series for backup
+    bpod_backup_behavioral_event = behavior.BehavioralEvents(
+        name='bpod_backup_BehavioralEvents'
+    )
+    for _, time_series in bpod_nwb.acquisition['BehavioralEvents'].time_series.items():
+        bpod_backup_behavioral_event.create_timeseries(
+            name=time_series.name,
+            unit=time_series.unit,
+            timestamps=time_series.timestamps,
+            data=time_series.data,
+            description=time_series.description,
+        )
+    bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
+    
+    # --- Save NWB file in bonsai_nwb format ---
+    bonsai_nwb_name = (f"{bpod_nwb.subject.subject_id}_"
+                       f"{session_start_time.strftime(r'%Y-%m-%d')}_"
+                       f"{session_start_time.strftime(r'%H-%M-%S')}.nwb")
+    
     if len(bonsai_nwb.trials) > 0:
-        NWBName = os.path.join(save_folder, base_filename)
+        NWBName = os.path.join(save_folder, bonsai_nwb_name)
         io = NWBHDF5IO(NWBName, mode="w")
         io.write(bonsai_nwb)
         io.close()
