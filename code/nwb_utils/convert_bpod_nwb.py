@@ -489,6 +489,10 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
             description=bpod_nwb.units.description,
         )
         for col in bpod_nwb.units.colnames:
+            if col in ['spike_times', 'electrodes']:
+                # Don't add column `spike_times` and 'electrodes' to avoid inhomogeneous error
+                # leave them as nwb internal data type that enables DynamicTable (spike_times + spike_times_index)
+                continue
             bonsai_nwb.add_unit_column(
                 name=bpod_nwb.units[col].name,
                 description=bpod_nwb.units[col].description,
@@ -497,8 +501,6 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
             u = u.iloc[0]
             bonsai_nwb.add_unit(
                 **{f: u[f] for f in u.keys()},
-                spike_times_index=np.nan,
-                electrodes_index=np.nan,
             )
         
     
