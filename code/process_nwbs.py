@@ -171,11 +171,13 @@ def compute_df_session_meta(nwb, df_trial):
     # Parse effective block
     block_start_left, block_start_right, block_start_effective = _get_block_starts(p_L, p_R)
     if 'uncoupled' not in nwb.protocol.lower():
-        assert all(block_start_left == block_start_right), "Blocks are not fully aligned in a Coupled task!"
+        if not (len(block_start_left) == len(block_start_right) 
+                and all(block_start_left == block_start_right)):
+            logger.warning("Blocks are not fully aligned in a Coupled task!")
     
     # -- Pack data --
     dict_meta = {
-        'rig': meta_dict['box'],
+        'rig': meta_dict['box'],        
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
@@ -234,7 +236,11 @@ def compute_df_session_meta(nwb, df_trial):
             df_trial[f'lickspout_position_{axis}'][0] for axis in 'xyz'},
         **{f'lickspout_median_pos_{axis}': 
             np.median(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
-        }
+    }
+    
+    if 'bpod' in nwb.session_description:
+        # Add a flag indicating this is an old bpod session
+        dict_meta['old_bpod_session'] = True
 
     df_meta = pd.DataFrame(dict_meta, 
                             index=session_index,
@@ -287,6 +293,11 @@ def compute_df_session_performance(nwb, df_trial):
                                                                df_trial.reward_random_number_left[df_trial.non_autowater_finished_trial].values, 
                                                                df_trial.reward_random_number_right[df_trial.non_autowater_finished_trial].values
                                                                )
+    
+    # Override foraging_eff_random_seed if the nwb is converted from old bpod session
+    # because in DataJoint, I already computed the foraging_eff_random_seed
+    if 'bpod' in nwb.session_description:
+        foraging_eff_random_seed = nwb.get_scratch('metadata')['foraging_efficiency_with_actual_random_seed'].values[0]
 
     all_lick_number = len(nwb.acquisition['left_lick_time'].timestamps) + len(nwb.acquisition['right_lick_time'].timestamps)
     
@@ -562,6 +573,8 @@ if __name__ == '__main__':
         # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
         # to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
+        
+    # nwb_file_names = ['/root/capsule/results/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
     
     logger.info(f'nwb files to process: {nwb_file_names}')
 
