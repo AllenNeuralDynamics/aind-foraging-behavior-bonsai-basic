@@ -441,15 +441,24 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         return 'empty_trials'
 
 
-def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file):
+def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing=True):
     io = NWBHDF5IO(bpod_nwb_file, mode='r')
-    nwb = io.read()
+    bpod_nwb = io.read()
+    
+    # Time info
+    session_start_time = bpod_nwb.session_start_time.replace(tzinfo=tzlocal())
+    
+    if skip_existing and len(
+        glob.glob(fR"/data/foraging_nwb_bpod/{bpod_nwb.subject.subject_id}"
+                  fR"_{session_start_time.strftime(r'%Y-%m-%d')}*.nwb")
+    ):
+        return 'already_exists'
     
     try:
-        meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
+        meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=bpod_nwb.identifier)
         if meta_dict_from_pkl is None:
             return 'missing_meta'
-        return nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
+        return nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl)
     except Exception as e:
         logger.error(f'{bpod_nwb_file}: {e}')
         return "uncaught_error"
@@ -470,29 +479,31 @@ if __name__ == '__main__':
     # Send logging to terminal as well
     logger.addHandler(logging.StreamHandler())
         
-    # By default, process all nwb files under /data/foraging_nwb_bonsai folder
-    # bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
+    # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
+    bpod_nwb_files_all = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
+    skip_existing = True # by default, skip existing files
     
     # For debugging
-    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/XY_03/XY_03_20221010_3.nwb']
+    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/666613/666613_20230522_6.nwb']
     
     if len(bpod_nwb_files) == 1:
-        convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])
+        results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])]
     else:
         n_cpus = 16
         results = []
         
         logger.info(f'Starting multiprocessing with {n_cpus} cores...')
         with mp.Pool(processes=n_cpus) as pool:
-            jobs = [pool.apply_async(convert_one_bpod_to_bonsai_nwb, args=(nwb_file_name,)) 
+            jobs = [pool.apply_async(convert_one_bpod_to_bonsai_nwb, args=(nwb_file_name, skip_existing)) 
                     for nwb_file_name in bpod_nwb_files]
             
             for job in tqdm.tqdm(jobs):
                 results.append(job.get())
             
-        logger.info(f'\nProcessed {len(results)} files: '
-                f'{results.count("success")} successfully converted; '
-                f'{results.count("missing_meta")} missing meta, '
-                f'{results.count("empty_trials")} empty_trials, '
-                f'{results.count("uncaught_error")} uncaught error\n\n')
+    logger.info(f'\nProcessed {len(results)} files: '
+            f'{results.count("success")} successfully converted; '
+            f'{results.count("already_exists")} already existed, '
+            f'{results.count("missing_meta")} missing meta, '
+            f'{results.count("empty_trials")} empty_trials, '
+            f'{results.count("uncaught_error")} uncaught error\n\n')
     
