@@ -6,7 +6,8 @@ from uuid import uuid4
 import numpy as np
 import json
 import os
-import datetime
+from datetime import datetime, timedelta
+import re
 import logging
 import pandas as pd
 from dateutil.tz import tzlocal
@@ -18,83 +19,66 @@ from scipy.io import loadmat
 save_folder=R'/root/capsule/results'
 
 logger = logging.getLogger(__name__)
-    
 
-######## load the Json/Mat file #######
-def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
+df_session_bpod = pd.read_pickle(os.path.join("/root/capsule/data/s3_foraging_all_nwb/df_sessions.pkl"))
+
+def get_meta_dict_from_session_pkl(bpod_session_id):
+    """ Get metainfo from df_session.pkl for bpod sessions
+    I haven't exported all necessary metadata to nwb but luckily I have them in df_session.pkl
+    """
+    regex = r"(?P<h2o>\w+)_(?P<date>\d{8})_(\d+)_s(?P<session>\d+)"
+    match = re.search(regex, bpod_session_id)
+    if match:
+        h2o = match['h2o']
+        date = datetime.strptime(match['date'], '%Y%m%d').date()
+        session = int(match['session'])
+        meta_dict = df_session_bpod[
+            (df_session_bpod['h2o'] == h2o) 
+            & (df_session_bpod['session_date'] == date) 
+            & (df_session_bpod['session'] == session)    
+        ].to_dict(orient='records')[0]
+    
+    if not match or len(meta_dict) == 0:
+        logger.warning(f"Cannot find meta info from df_sessions.pkl for {bpod_session_id}")
+        # return a dict with all nan but with the same columns
+        return {k: np.nan for k in df_session_bpod.columns}
+    return meta_dict
     
     
-    if fname.endswith('.mat'):
-        Obj = loadmat(fname)
-        for key in Obj.keys():
-            Value=Obj[key]
-            if key=='B_SuggestedWater':
-                pass
-            if isinstance(Value, np.ndarray):
-                if Value.shape[0]==1:
-                    try:
-                        Value=Value.reshape(Value.shape[1],)
-                    except:
-                        pass
-                if Value.shape==(1,):
-                    Obj[key]=Value.tolist()[0]
-                else:
-                    Obj[key]=Value.tolist()
-    elif fname.endswith('.json'):
-        f = open (fname, "r")
-        Obj = json.loads(f.read())
-        f.close()
-        
-    # transfer dictionary to class
-    class obj:
-        pass
-    for attr_name in Obj.keys():
-        setattr(obj, attr_name, Obj[attr_name])
-    # Some fields are not provided in some cases
-    if not hasattr(obj, 'Experimenter'):
-        setattr(obj, 'Experimenter', '')
-    if not hasattr(obj, 'Other_CurrentTime'):
-        setattr(obj, 'Other_CurrentTime', '')
-    if not hasattr(obj, 'WeightAfter'):
-        setattr(obj, 'WeightAfter', '')
-    if not hasattr(obj, 'WeightBefore'):
-        setattr(obj, 'WeightBefore', '')
-        
-    # Early return if missing some key fields
-    if any([not hasattr(obj, field) for field in ['B_TrialEndTime', 'TP_BaseRewardSum']]):
-        logger.warning(f"Missing key fields! Skipping {fname}")
-        return 'incomplete_json'
+TASK_MAPPER = {
+    'coupled_block_baiting': 'Coupled Baiting',
+    'decoupled_no_baiting': 'Uncoupled Without Baiting',
+    'random_walk': 'Random Walk',
+}
+
+
+def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     
-        
-    if not hasattr(obj, 'Other_SessionStartTime'):
-        session_start_timeC=datetime.datetime.strptime('2023-04-26', "%Y-%m-%d") # specific for LA30_2023-04-27.json
-    else:
-        session_start_timeC=datetime.datetime.strptime(obj.Other_SessionStartTime, '%Y-%m-%d %H:%M:%S.%f')
-    
-    # add local time zone explicitly
-    session_start_timeC = session_start_timeC.replace(tzinfo=tzlocal())
+    # prepare
+    session_start_time = bpod_nwb.session_start_time.replace(tzinfo=tzlocal())
 
     ### session related information ###
-    nwbfile = NWBFile(
-        session_description='Session end time:'+obj.Other_CurrentTime,  
+    bonsai_nwb = NWBFile(
+        session_description='Session end time:' + ' unknown',  
         identifier=str(uuid4()),  # required
-        session_start_time= session_start_timeC,  # required
-        session_id=os.path.basename(fname),  # optional
-        experimenter=[
-            obj.Experimenter,
-        ],  # optional
-        lab="",  # optional
-        institution="Allen Institute for Neural Dynamics",  # optional
-        ### add optogenetics description (the target brain areas). 
-        experiment_description="Optogenetics target brain areas:",  # optional
+        session_start_time=session_start_time,
+        session_id=bpod_nwb.identifier,  # optional
+        experimenter=bpod_nwb.experimenter,  # optional
+        lab=("" 
+            if session_start_time > datetime(2022, 1, 1, tzinfo=tzlocal())
+            else "Svoboda lab"),  # optional
+        institution=("Allen Institute for Neural Dynamics" 
+                     if session_start_time > datetime(2022, 1, 1, tzinfo=tzlocal())
+                     else "Janelia Research Campus"),  # optional
+        experiment_description=bpod_nwb.experiment_description,  # optional
         related_publications="",  # optional
-        notes=obj.ShowNotes,
-        protocol=obj.Task
+        notes=bpod_nwb.session_description,  # optional
+        protocol=TASK_MAPPER[meta_dict_from_pkl['task']],  # optional
     )
 
     #######  Animal information #######
     # need to get more subject information through subject_id
-    nwbfile.subject = Subject(
+    bonsai_nwb.subject = Subject(
         subject_id=obj.ID,
         description='Animal name:'+obj.ID+'  Weight after(g):'+obj.WeightAfter,
         species="Mus musculus",
@@ -116,11 +100,13 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
     water_in_session_total = water_day_total - water_after_session
     water_in_session_manual = water_in_session_total - water_in_session_foraging
     
+    session_run_time_in_min = meta_dict_from_pkl['session_length_in_hrs'] * 60
+    
     metadata = {
         # Meta
         'box': _get_field(obj, ['box', 'Tower']),
-        'session_end_time': _get_field(obj, 'Other_CurrentTime'),
-        'session_run_time_in_min': _get_field(obj, 'Other_RunningTime'),
+        'session_end_time': session_start_time + timedelta(minutes=session_run_time_in_min),
+        'session_run_time_in_min': session_run_time_in_min,
         
         # Water (all in mL)
         'water_in_session_foraging': water_in_session_foraging, 
@@ -138,6 +124,9 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         # Performance
         'foraging_efficiency': _get_field(obj, 'B_for_eff_optimal'),
         'foraging_efficiency_with_actual_random_seed': _get_field(obj, 'B_for_eff_optimal_random_seed'),
+        
+        # A copy of all fields from df_session.pkl so that we keep as much info from datajoint as possible
+        **{f"from_bpod_pkl_{key}": value for key, value in meta_dict_from_pkl.items()},
     }
 
     # Turn the metadata into a DataFrame in order to add it to the scratch
@@ -147,85 +136,85 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
     # I don't bother creating an nwb "extension"...
     # To retrieve the metadata, use:
     # nwbfile.scratch['metadata'].to_dataframe()
-    nwbfile.add_scratch(df_metadata, 
+    bonsai_nwb.add_scratch(df_metadata, 
                         name="metadata",
                         description="Some important session-wise meta data")
 
 
     #######       Add trial     #######
     ## behavior events (including trial start/end time; left/right lick time; give left/right reward time) ##
-    nwbfile.add_trial_column(name='animal_response', description=f'The response of the animal. 0, left choice; 1, right choice; 2, no response')
-    nwbfile.add_trial_column(name='rewarded_historyL', description=f'The reward history of left lick port')
-    nwbfile.add_trial_column(name='rewarded_historyR', description=f'The reward history of right lick port')
-    nwbfile.add_trial_column(name='delay_start_time', description=f'The delay start time')
-    nwbfile.add_trial_column(name='goCue_start_time', description=f'The go cue start time')
-    nwbfile.add_trial_column(name='reward_outcome_time', description=f'The reward outcome time (reward/no reward/no response)')
+    bonsai_nwb.add_trial_column(name='animal_response', description=f'The response of the animal. 0, left choice; 1, right choice; 2, no response')
+    bonsai_nwb.add_trial_column(name='rewarded_historyL', description=f'The reward history of left lick port')
+    bonsai_nwb.add_trial_column(name='rewarded_historyR', description=f'The reward history of right lick port')
+    bonsai_nwb.add_trial_column(name='delay_start_time', description=f'The delay start time')
+    bonsai_nwb.add_trial_column(name='goCue_start_time', description=f'The go cue start time')
+    bonsai_nwb.add_trial_column(name='reward_outcome_time', description=f'The reward outcome time (reward/no reward/no response)')
     ## training paramters ##
     # behavior structure
-    nwbfile.add_trial_column(name='bait_left', description=f'Whether the current left lickport has a bait or not')
-    nwbfile.add_trial_column(name='bait_right', description=f'Whether the current right lickport has a bait or not')
-    nwbfile.add_trial_column(name='base_reward_probability_sum', description=f'The summation of left and right reward probability')
-    nwbfile.add_trial_column(name='reward_probabilityL', description=f'The reward probability of left lick port')
-    nwbfile.add_trial_column(name='reward_probabilityR', description=f'The reward probability of right lick port')
-    nwbfile.add_trial_column(name='reward_random_number_left', description=f'The random number used to determine the reward of left lick port')
-    nwbfile.add_trial_column(name='reward_random_number_right', description=f'The random number used to determine the reward of right lick port')
-    nwbfile.add_trial_column(name='left_valve_open_time', description=f'The left valve open time')
-    nwbfile.add_trial_column(name='right_valve_open_time', description=f'The right valve open time')
+    bonsai_nwb.add_trial_column(name='bait_left', description=f'Whether the current left lickport has a bait or not')
+    bonsai_nwb.add_trial_column(name='bait_right', description=f'Whether the current right lickport has a bait or not')
+    bonsai_nwb.add_trial_column(name='base_reward_probability_sum', description=f'The summation of left and right reward probability')
+    bonsai_nwb.add_trial_column(name='reward_probabilityL', description=f'The reward probability of left lick port')
+    bonsai_nwb.add_trial_column(name='reward_probabilityR', description=f'The reward probability of right lick port')
+    bonsai_nwb.add_trial_column(name='reward_random_number_left', description=f'The random number used to determine the reward of left lick port')
+    bonsai_nwb.add_trial_column(name='reward_random_number_right', description=f'The random number used to determine the reward of right lick port')
+    bonsai_nwb.add_trial_column(name='left_valve_open_time', description=f'The left valve open time')
+    bonsai_nwb.add_trial_column(name='right_valve_open_time', description=f'The right valve open time')
     # block
-    nwbfile.add_trial_column(name='block_beta', description=f'The beta of exponential distribution to generate the block length')
-    nwbfile.add_trial_column(name='block_min', description=f'The minimum length allowed for each block')
-    nwbfile.add_trial_column(name='block_max', description=f'The maxmum length allowed for each block')
-    nwbfile.add_trial_column(name='min_reward_each_block', description=f'The minimum reward allowed for each block')
+    bonsai_nwb.add_trial_column(name='block_beta', description=f'The beta of exponential distribution to generate the block length')
+    bonsai_nwb.add_trial_column(name='block_min', description=f'The minimum length allowed for each block')
+    bonsai_nwb.add_trial_column(name='block_max', description=f'The maxmum length allowed for each block')
+    bonsai_nwb.add_trial_column(name='min_reward_each_block', description=f'The minimum reward allowed for each block')
     # delay duration
-    nwbfile.add_trial_column(name='delay_beta', description=f'The beta of exponential distribution to generate the delay duration(s)')
-    nwbfile.add_trial_column(name='delay_min', description=f'The minimum duration(s) allowed for each delay')
-    nwbfile.add_trial_column(name='delay_max', description=f'The maxmum duration(s) allowed for each delay')
-    nwbfile.add_trial_column(name='delay_duration', description=f'The expected time duration between delay start and go cue start')
+    bonsai_nwb.add_trial_column(name='delay_beta', description=f'The beta of exponential distribution to generate the delay duration(s)')
+    bonsai_nwb.add_trial_column(name='delay_min', description=f'The minimum duration(s) allowed for each delay')
+    bonsai_nwb.add_trial_column(name='delay_max', description=f'The maxmum duration(s) allowed for each delay')
+    bonsai_nwb.add_trial_column(name='delay_duration', description=f'The expected time duration between delay start and go cue start')
     # ITI duration
-    nwbfile.add_trial_column(name='ITI_beta', description=f'The beta of exponential distribution to generate the ITI duration(s)')
-    nwbfile.add_trial_column(name='ITI_min', description=f'The minimum duration(s) allowed for each ITI')
-    nwbfile.add_trial_column(name='ITI_max', description=f'The maxmum duration(s) allowed for each ITI')
-    nwbfile.add_trial_column(name='ITI_duration', description=f'The expected time duration between trial start and ITI start')
+    bonsai_nwb.add_trial_column(name='ITI_beta', description=f'The beta of exponential distribution to generate the ITI duration(s)')
+    bonsai_nwb.add_trial_column(name='ITI_min', description=f'The minimum duration(s) allowed for each ITI')
+    bonsai_nwb.add_trial_column(name='ITI_max', description=f'The maxmum duration(s) allowed for each ITI')
+    bonsai_nwb.add_trial_column(name='ITI_duration', description=f'The expected time duration between trial start and ITI start')
     # response duration
-    nwbfile.add_trial_column(name='response_duration', description=f'The maximum time that the animal must make a choce in order to get a reward')
+    bonsai_nwb.add_trial_column(name='response_duration', description=f'The maximum time that the animal must make a choce in order to get a reward')
     # reward consumption duration
-    nwbfile.add_trial_column(name='reward_consumption_duration', description=f'The duration for the animal to consume the reward')
+    bonsai_nwb.add_trial_column(name='reward_consumption_duration', description=f'The duration for the animal to consume the reward')
     # auto water
-    nwbfile.add_trial_column(name='auto_waterL', description=f'Autowater given at Left')
-    nwbfile.add_trial_column(name='auto_waterR', description=f'Autowater given at Right')
+    bonsai_nwb.add_trial_column(name='auto_waterL', description=f'Autowater given at Left')
+    bonsai_nwb.add_trial_column(name='auto_waterR', description=f'Autowater given at Right')
     # optogenetics
-    nwbfile.add_trial_column(name='laser_on_trial', description=f'Trials with laser stimulation')
-    nwbfile.add_trial_column(name='laser_wavelength', description=f'The wavelength of laser or LED')
-    nwbfile.add_trial_column(name='laser_location', description=f'The target brain areas')
-    nwbfile.add_trial_column(name='laser_power', description=f'The laser power(mw)')
-    nwbfile.add_trial_column(name='laser_duration', description=f'The laser duration')
-    nwbfile.add_trial_column(name='laser_condition', description=f'The laser on is conditioned on LaserCondition')
-    nwbfile.add_trial_column(name='laser_condition_probability', description=f'The laser on is conditioned on LaserCondition with a probability LaserConditionPro')
-    nwbfile.add_trial_column(name='laser_start', description=f'Laser start is aligned to an event')
-    nwbfile.add_trial_column(name='laser_start_offset', description=f'Laser start is aligned to an event with an offset')
-    nwbfile.add_trial_column(name='laser_end', description=f'Laser end is aligned to an event')
-    nwbfile.add_trial_column(name='laser_end_offset', description=f'Laser end is aligned to an event with an offset')
-    nwbfile.add_trial_column(name='laser_protocol', description=f'The laser waveform')
-    nwbfile.add_trial_column(name='laser_frequency', description=f'The laser waveform frequency')
-    nwbfile.add_trial_column(name='laser_rampingdown', description=f'The ramping down time of the laser')
-    nwbfile.add_trial_column(name='laser_pulse_duration', description=f'The pulse duration for Pulse protocol')
+    bonsai_nwb.add_trial_column(name='laser_on_trial', description=f'Trials with laser stimulation')
+    bonsai_nwb.add_trial_column(name='laser_wavelength', description=f'The wavelength of laser or LED')
+    bonsai_nwb.add_trial_column(name='laser_location', description=f'The target brain areas')
+    bonsai_nwb.add_trial_column(name='laser_power', description=f'The laser power(mw)')
+    bonsai_nwb.add_trial_column(name='laser_duration', description=f'The laser duration')
+    bonsai_nwb.add_trial_column(name='laser_condition', description=f'The laser on is conditioned on LaserCondition')
+    bonsai_nwb.add_trial_column(name='laser_condition_probability', description=f'The laser on is conditioned on LaserCondition with a probability LaserConditionPro')
+    bonsai_nwb.add_trial_column(name='laser_start', description=f'Laser start is aligned to an event')
+    bonsai_nwb.add_trial_column(name='laser_start_offset', description=f'Laser start is aligned to an event with an offset')
+    bonsai_nwb.add_trial_column(name='laser_end', description=f'Laser end is aligned to an event')
+    bonsai_nwb.add_trial_column(name='laser_end_offset', description=f'Laser end is aligned to an event with an offset')
+    bonsai_nwb.add_trial_column(name='laser_protocol', description=f'The laser waveform')
+    bonsai_nwb.add_trial_column(name='laser_frequency', description=f'The laser waveform frequency')
+    bonsai_nwb.add_trial_column(name='laser_rampingdown', description=f'The ramping down time of the laser')
+    bonsai_nwb.add_trial_column(name='laser_pulse_duration', description=f'The pulse duration for Pulse protocol')
     
     # auto training parameters
-    nwbfile.add_trial_column(name='auto_train_engaged', description=f'Whether the auto training is engaged')
-    nwbfile.add_trial_column(name='auto_train_curriculum_name', description=f'The name of the auto training curriculum')
-    nwbfile.add_trial_column(name='auto_train_curriculum_version', description=f'The version of the auto training curriculum')
-    nwbfile.add_trial_column(name='auto_train_curriculum_schema_version', description=f'The schema version of the auto training curriculum')
-    nwbfile.add_trial_column(name='auto_train_stage', description=f'The current stage of auto training')
-    nwbfile.add_trial_column(name='auto_train_stage_overridden', description=f'Whether the auto training stage is overridden')
+    bonsai_nwb.add_trial_column(name='auto_train_engaged', description=f'Whether the auto training is engaged')
+    bonsai_nwb.add_trial_column(name='auto_train_curriculum_name', description=f'The name of the auto training curriculum')
+    bonsai_nwb.add_trial_column(name='auto_train_curriculum_version', description=f'The version of the auto training curriculum')
+    bonsai_nwb.add_trial_column(name='auto_train_curriculum_schema_version', description=f'The schema version of the auto training curriculum')
+    bonsai_nwb.add_trial_column(name='auto_train_stage', description=f'The current stage of auto training')
+    bonsai_nwb.add_trial_column(name='auto_train_stage_overridden', description=f'Whether the auto training stage is overridden')
     
     # add lickspout position
-    nwbfile.add_trial_column(name='lickspout_position_x', description=f'x position (um) of the lickspout position (left-right)')
-    nwbfile.add_trial_column(name='lickspout_position_y', description=f'y position (um) of the lickspout position (forward-backward)')
-    nwbfile.add_trial_column(name='lickspout_position_z', description=f'z position (um) of the lickspout position (up-down)')
+    bonsai_nwb.add_trial_column(name='lickspout_position_x', description=f'x position (um) of the lickspout position (left-right)')
+    bonsai_nwb.add_trial_column(name='lickspout_position_y', description=f'y position (um) of the lickspout position (forward-backward)')
+    bonsai_nwb.add_trial_column(name='lickspout_position_z', description=f'z position (um) of the lickspout position (up-down)')
 
     # add reward size
-    nwbfile.add_trial_column(name='reward_size_left', description=f'Left reward size (uL)')
-    nwbfile.add_trial_column(name='reward_size_right', description=f'Right reward size (uL)')
+    bonsai_nwb.add_trial_column(name='reward_size_left', description=f'Left reward size (uL)')
+    bonsai_nwb.add_trial_column(name='reward_size_right', description=f'Right reward size (uL)')
 
     ## start adding trials ##
     # to see if we have harp timestamps
@@ -283,7 +272,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
             else:
                 goCue_start_time_t = getattr(obj, f'B_GoCueTimeSoundCard')[i]  # Use Harp time, new format
             
-        nwbfile.add_trial(start_time=getattr(obj, f'B_TrialStartTime{Harp}')[i], 
+        bonsai_nwb.add_trial(start_time=getattr(obj, f'B_TrialStartTime{Harp}')[i], 
                           stop_time=getattr(obj, f'B_TrialEndTime{Harp}')[i],
                           animal_response=obj.B_AnimalResponseHistory[i],
                           rewarded_historyL=obj.B_RewardedHistory[0][i],
@@ -377,7 +366,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_LeftRewardDeliveryTime)).tolist(),
         description='The reward delivery time of the left lick port'
     )
-    nwbfile.add_acquisition(LeftRewardDeliveryTime)
+    bonsai_nwb.add_acquisition(LeftRewardDeliveryTime)
     RightRewardDeliveryTime = TimeSeries(
         name="right_reward_delivery_time",
         unit="second",
@@ -385,7 +374,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_RightRewardDeliveryTime)).tolist(),
         description='The reward delivery time of the right lick port'
     )
-    nwbfile.add_acquisition(RightRewardDeliveryTime)
+    bonsai_nwb.add_acquisition(RightRewardDeliveryTime)
     LeftLickTime = TimeSeries(
         name="left_lick_time",
         unit="second",
@@ -393,7 +382,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_LeftLickTime)).tolist(),
         description='The time of left licks'
     )
-    nwbfile.add_acquisition(LeftLickTime)
+    bonsai_nwb.add_acquisition(LeftLickTime)
     RightLickTime = TimeSeries(
         name="right_lick_time",
         unit="second",
@@ -401,7 +390,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_RightLickTime)).tolist(),
         description='The time of left licks'
     )
-    nwbfile.add_acquisition(RightLickTime)
+    bonsai_nwb.add_acquisition(RightLickTime)
 
     # Add photometry time stamps
     if not hasattr(obj, 'B_PhotometryFallingTimeHarp') or obj.B_PhotometryFallingTimeHarp == []:
@@ -415,7 +404,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_PhotometryFallingTimeHarp)).tolist(),
         description='The time of photometry falling edge (from Harp)'
     )
-    nwbfile.add_acquisition(PhotometryFallingTimeHarp)
+    bonsai_nwb.add_acquisition(PhotometryFallingTimeHarp)
 
     if not hasattr(obj, 'B_PhotometryRisingTimeHarp') or obj.B_PhotometryRisingTimeHarp == []:
         B_PhotometryRisingTimeHarp = [np.nan]
@@ -428,7 +417,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_PhotometryRisingTimeHarp)).tolist(),
         description='The time of photometry rising edge (from Harp)'
     )
-    nwbfile.add_acquisition(PhotometryRisingTimeHarp)
+    bonsai_nwb.add_acquisition(PhotometryRisingTimeHarp)
     
     # Add optogenetics time stamps
     if not hasattr(obj, 'B_OptogeneticsTimeHarp') or obj.B_OptogeneticsTimeHarp == []:
@@ -442,14 +431,14 @@ def nwb_bpod_to_bonsai(bpod_nwb, save_folder=save_folder):
         data=np.ones(len(B_OptogeneticsTimeHarp)).tolist(),
         description='Optogenetics time (from Harp)'
     )
-    nwbfile.add_acquisition(OptogeneticsTimeHarp)
+    bonsai_nwb.add_acquisition(OptogeneticsTimeHarp)
 
     # save NWB file
     base_filename = os.path.splitext(os.path.basename(fname))[0] + '.nwb'
-    if len(nwbfile.trials) > 0:
+    if len(bonsai_nwb.trials) > 0:
         NWBName = os.path.join(save_folder, base_filename)
         io = NWBHDF5IO(NWBName, mode="w")
-        io.write(nwbfile)
+        io.write(bonsai_nwb)
         io.close()
         logger.info(f'Successfully converted: {NWBName}')
         return 'success'
@@ -468,5 +457,6 @@ if __name__ == '__main__':
     io = NWBHDF5IO(nwb_folder + bpod_nwb_file, mode='r')
     nwb = io.read()
     
-    nwb_bpod_to_bonsai(nwb)
+    meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
+    nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
     
