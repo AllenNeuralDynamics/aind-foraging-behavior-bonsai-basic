@@ -20,6 +20,12 @@ save_folder=R'/root/capsule/results'
 
 logger = logging.getLogger(__name__)
 
+TASK_MAPPER = {
+    'coupled_block_baiting': 'Coupled Baiting',
+    'decoupled_no_baiting': 'Uncoupled Without Baiting',
+    'random_walk': 'Random Walk',
+}
+
 df_session_bpod = pd.read_pickle(os.path.join("/root/capsule/data/s3_foraging_all_nwb/df_sessions.pkl"))
 
 def get_meta_dict_from_session_pkl(bpod_session_id):
@@ -43,14 +49,20 @@ def get_meta_dict_from_session_pkl(bpod_session_id):
         # return a dict with all nan but with the same columns
         return {k: np.nan for k in df_session_bpod.columns}
     return meta_dict
-    
-    
-TASK_MAPPER = {
-    'coupled_block_baiting': 'Coupled Baiting',
-    'decoupled_no_baiting': 'Uncoupled Without Baiting',
-    'random_walk': 'Random Walk',
-}
 
+
+def _get_trial_event_time(bpod_nwb, event_name, trial_start_time, trial_stop_time):
+    """ Get trialized event time from bpod nwb
+    """
+    all_event_times = nwb.acquisition['BehavioralEvents'][event_name].timestamps[:]
+    this_trial = np.where((trial_start_time <= all_event_times) 
+                          & (all_event_times <= trial_stop_time)
+                          )[0]
+    if this_trial.size == 0:
+        return np.nan
+    else:
+        return all_event_times[this_trial[0]]
+    
 
 def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     
@@ -112,7 +124,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         'foraging_efficiency_with_actual_random_seed': meta_dict_from_pkl['foraging_eff'],
         
         # A copy of all fields from df_session.pkl so that we keep as much info from datajoint as possible
-        **{f"from_bpod_pkl_{key}": value for key, value in meta_dict_from_pkl.items()},
+        **{f"bpod_backup_{key}": value for key, value in meta_dict_from_pkl.items()},
     }
 
     # Turn the metadata into a DataFrame in order to add it to the scratch
@@ -203,76 +215,93 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     # add reward size
     bonsai_nwb.add_trial_column(name='reward_size_left', description=f'Left reward size (uL)')
     bonsai_nwb.add_trial_column(name='reward_size_right', description=f'Right reward size (uL)')
+    
+    # also add all columns from bpod trial table for backup purpose
+    bpod_backup_columns = [f.name for f in bpod_nwb.trials.columns 
+                           if f.name not in ['start_time', 'stop_time']]
+    for bpod_column in bpod_backup_columns:
+        bonsai_nwb.add_trial_column(
+            name=f'bpod_backup_{bpod_column}',
+            description=bpod_nwb.trials[bpod_column].description)
 
     ## start adding trials ##
-
-    for i in range(len(obj.B_TrialEndTime)):
+    df_trials = bpod_nwb.trials.to_dataframe()
+    dict_trials = df_trials.to_dict(orient='records')
+    has_photostim = any(df_trials.photostim_power > 0)
+    
+    for d in dict_trials:
         bonsai_nwb.add_trial(
-            start_time=getattr(obj, f'B_TrialStartTime{Harp}')[i], 
-            stop_time=getattr(obj, f'B_TrialEndTime{Harp}')[i],
-            animal_response=obj.B_AnimalResponseHistory[i],
-            rewarded_historyL=obj.B_RewardedHistory[0][i],
-            rewarded_historyR=obj.B_RewardedHistory[1][i],
-            reward_outcome_time=obj.B_RewardOutcomeTime[i],
-            delay_start_time=getattr(obj, f'B_DelayStartTime{Harp}')[i],
-            goCue_start_time=goCue_start_time_t,
-            bait_left=obj.B_BaitHistory[0][i],
-            bait_right=obj.B_BaitHistory[1][i],
-            base_reward_probability_sum=float(obj.TP_BaseRewardSum[i]),
-            reward_probabilityL=float(obj.B_RewardProHistory[0][i]),
-            reward_probabilityR=float(obj.B_RewardProHistory[1][i]),
-            reward_random_number_left=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[0],
-            reward_random_number_right=_get_field(obj, 'B_CurrentRewardProbRandomNumber', index=i, default=[np.nan] * 2)[1],
-            left_valve_open_time=float(obj.TP_LeftValue[i]),
-            right_valve_open_time=float(obj.TP_RightValue[i]),
-            block_beta=float(obj.TP_BlockBeta[i]),
-            block_min=float(obj.TP_BlockMin[i]),
-            block_max=float(obj.TP_BlockMax[i]),
-            min_reward_each_block=float(obj.TP_BlockMinReward[i]),
-            delay_beta=float(obj.TP_DelayBeta[i]),
-            delay_min=float(obj.TP_DelayMin[i]),
-            delay_max=float(obj.TP_DelayMax[i]),
-            delay_duration=obj.B_DelayHistory[i],
-            ITI_beta=float(obj.TP_ITIBeta[i]),
-            ITI_min=float(obj.TP_ITIMin[i]),
-            ITI_max=float(obj.TP_ITIMax[i]),
-            ITI_duration=obj.B_ITIHistory[i],
-            response_duration=float(obj.TP_ResponseTime[i]),
-            reward_consumption_duration=float(obj.TP_RewardConsumeTime[i]),
-            auto_waterL=obj.B_AutoWaterTrial[0][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],   # Back-compatible with old autowater format
-            auto_waterR=obj.B_AutoWaterTrial[1][i] if type(obj.B_AutoWaterTrial[0]) is list else obj.B_AutoWaterTrial[i],
-            laser_on_trial=obj.B_LaserOnTrial[i],
-            laser_wavelength=LaserWavelengthC,
-            laser_location=LaserLocationC,
-            laser_power=LaserPowerC,
-            laser_duration=LaserDurationC,
-            laser_condition=LaserConditionC,
-            laser_condition_probability=LaserConditionProC,
-            laser_start=LaserStartC,
-            laser_start_offset=LaserStartOffsetC,
-            laser_end=LaserEndC,
-            laser_end_offset=LaserEndOffsetC,
-            laser_protocol=LaserProtocolC,
-            laser_frequency=LaserFrequencyC,
-            laser_rampingdown=LaserRampingDownC,
-            laser_pulse_duration=LaserPulseDurC,
+            start_time=d['start_time'], 
+            stop_time=d['stop_time'],
+            animal_response={'left': 0, 'right': 1, 'null': 2}[d['choice']], # 0: left, 1: right, 2: ignored
+            rewarded_historyL=(d['choice']=='left') & (d['outcome']=='hit') & (d['auto_water']==0),
+            rewarded_historyR=(d['choice']=='right') & (d['outcome']=='hit') & (d['auto_water']==0),
+            reward_outcome_time=_get_trial_event_time(bpod_nwb, 'reward', d['start_time'], d['stop_time']),
+            delay_start_time=_get_trial_event_time(bpod_nwb, 'delay', d['start_time'], d['stop_time']),
+            goCue_start_time=_get_trial_event_time(bpod_nwb, 'go', d['start_time'], d['stop_time']),
+            bait_left=np.nan,
+            bait_right=np.nan,
+            base_reward_probability_sum=d['left_reward_prob'] + d['right_reward_prob'],
+            reward_probabilityL=d['left_reward_prob'],
+            reward_probabilityR=d['right_reward_prob'],
+            reward_random_number_left=np.nan,
+            reward_random_number_right=np.nan,
+            left_valve_open_time=np.nan,
+            right_valve_open_time=np.nan,
+            block_beta=np.nan,
+            block_min=np.nan,
+            block_max=np.nan,
+            min_reward_each_block=np.nan,
+            delay_beta=np.nan,
+            delay_min=np.nan,
+            delay_max=np.nan,
+            delay_duration=np.nan,
+            ITI_beta=np.nan,
+            ITI_min=np.nan,
+            ITI_max=np.nan,
+            ITI_duration=np.nan,
+            response_duration=np.nan,
+            reward_consumption_duration=np.nan,
+            auto_waterL=d['auto_water'] & (d['choice']=='left'),
+            auto_waterR=d['auto_water'] & (d['choice']=='right'),
+            
+            # photostim
+            laser_on_trial=d['photostim_power'] > 0,
+            laser_wavelength=473 if has_photostim else np.nan,
+            laser_location=meta_dict_from_pkl['photostim_location'] if has_photostim else np.nan,
+            laser_power=d['photostim_power'],
+            laser_duration=d['photostim_duration'],
+            laser_condition=np.nan,
+            laser_condition_probability=np.nan,
+            laser_start=d['photostim_bpod_timer_align_to'] if has_photostim else np.nan,
+            laser_start_offset=d['photostim_bpod_timer_offset'] if has_photostim else np.nan,
+            laser_end=d['photostim_bpod_timer_align_to'] if has_photostim else np.nan,
+            laser_end_offset=np.nan,
+            laser_protocol='Sine' if has_photostim else np.nan,
+            laser_frequency=40 if has_photostim else np.nan,
+            laser_rampingdown=d['photostim_ramping_down'] if has_photostim else np.nan,
+            laser_pulse_duration=np.nan,
 
             # add all auto training parameters (eventually should be in session.json)
-            auto_train_engaged=_get_field(obj, 'TP_auto_train_engaged', index=i),
-            auto_train_curriculum_name=_get_field(obj, 'TP_auto_train_curriculum_name', index=i, default=None) or 'none',
-            auto_train_curriculum_version=_get_field(obj, 'TP_auto_train_curriculum_version', index=i, default=None) or 'none',
-            auto_train_curriculum_schema_version=_get_field(obj, 'TP_auto_train_curriculum_schema_version', index=i, default=None) or 'none',
-            auto_train_stage=_get_field(obj, 'TP_auto_train_stage', index=i, default=None) or 'none',
-            auto_train_stage_overridden=_get_field(obj, 'TP_auto_train_stage_overridden', index=i, default=None) or np.nan,
+            auto_train_engaged=False,
+            auto_train_curriculum_name='none',
+            auto_train_curriculum_version='none',
+            auto_train_curriculum_schema_version='none',
+            auto_train_stage='none',
+            auto_train_stage_overridden=np.nan,
             
             # lickspout position
-            lickspout_position_x=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[0],
-            lickspout_position_y=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[1],
-            lickspout_position_z=_get_field(obj, 'B_NewscalePositions', index=i, default=[np.nan] * 3)[2],
+            lickspout_position_x=np.nan,
+            lickspout_position_y=np.nan,
+            lickspout_position_z=np.nan,
             
             # reward size
-            reward_size_left=float(_get_field(obj, 'TP_LeftValue_volume', index=i)),
-            reward_size_right=float(_get_field(obj, 'TP_RightValue_volume', index=i)),
+            reward_size_left=np.round(meta_dict_from_pkl['water_per_trial_in_uL'], 1),
+            reward_size_right=np.round(meta_dict_from_pkl['water_per_trial_in_uL'], 1),
+            
+            # all bpod backup columns
+            **{f'bpod_backup_{bpod_column}': d[bpod_column] 
+               for bpod_column in bpod_backup_columns},
         )
 
 
