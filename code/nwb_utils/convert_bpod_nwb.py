@@ -71,12 +71,17 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     session_run_time_in_min = meta_dict_from_pkl['session_length_in_hrs'] * 60
     session_end_time = session_start_time + timedelta(minutes=session_run_time_in_min)
 
+    # New NWB file name
+    bonsai_nwb_name = (f"{bpod_nwb.subject.subject_id}_"
+                       f"{session_start_time.strftime(r'%Y-%m-%d')}_"
+                       f"{session_start_time.strftime(r'%H-%M-%S')}.nwb")
+
     # --- Create a new NWB file ---
     bonsai_nwb = NWBFile(
-        session_description='Session end time:' + ' unknown',  
+        session_description='From old bpod sessions',  
         identifier=str(uuid4()),  # required
         session_start_time=session_start_time,
-        session_id=bpod_nwb.identifier,  # optional
+        session_id=bonsai_nwb_name.replace("nwb", "json"),  # A fake json file
         experimenter=bpod_nwb.experimenter,  # optional
         lab=("" 
             if session_start_time > datetime(2022, 1, 1, tzinfo=tzlocal())
@@ -406,9 +411,6 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
     
     # --- Save NWB file in bonsai_nwb format ---
-    bonsai_nwb_name = (f"{bpod_nwb.subject.subject_id}_"
-                       f"{session_start_time.strftime(r'%Y-%m-%d')}_"
-                       f"{session_start_time.strftime(r'%H-%M-%S')}.nwb")
     
     if len(bonsai_nwb.trials) > 0:
         NWBName = os.path.join(save_folder, bonsai_nwb_name)
