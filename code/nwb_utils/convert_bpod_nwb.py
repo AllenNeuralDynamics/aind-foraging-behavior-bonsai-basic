@@ -242,7 +242,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         bonsai_nwb.add_trial(
             start_time=d['start_time'], 
             stop_time=d['stop_time'],
-            animal_response={'left': 0, 'right': 1, 'null': 2}[d['choice']], # 0: left, 1: right, 2: ignored
+            animal_response={'left': 0.0, 'right': 1.0, 'null': 2.0}[d['choice']], # 0: left, 1: right, 2: ignored
             rewarded_historyL=(d['choice']=='left') & (d['outcome']=='hit') & (d['auto_water']==0),
             rewarded_historyR=(d['choice']=='right') & (d['outcome']=='hit') & (d['auto_water']==0),
             reward_outcome_time=_get_trial_event_time(bpod_nwb, 'reward', d['start_time'], d['stop_time']),
