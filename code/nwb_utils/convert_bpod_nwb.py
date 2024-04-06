@@ -442,6 +442,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
 
 
 def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing=True):
+    logger.info(f'Processing {bpod_nwb_file}...')
     io = NWBHDF5IO(bpod_nwb_file, mode='r')
     bpod_nwb = io.read()
     
@@ -484,7 +485,7 @@ if __name__ == '__main__':
     skip_existing = True # by default, skip existing files
     
     # For debugging
-    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/666613/666613_20230522_6.nwb']
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH09/HH09_20210609_57.nwb']
     
     if len(bpod_nwb_files) == 1:
         results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])]
