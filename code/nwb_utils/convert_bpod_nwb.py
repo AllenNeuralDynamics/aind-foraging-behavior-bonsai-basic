@@ -40,17 +40,16 @@ def get_meta_dict_from_session_pkl(bpod_session_id):
         h2o = match['h2o']
         date = datetime.strptime(match['date'], '%Y%m%d').date()
         session = int(match['session'])
-        meta_dict = df_session_bpod[
+        df_this = df_session_bpod[
             (df_session_bpod['h2o'] == h2o) 
             & (df_session_bpod['session_date'] == date) 
-            & (df_session_bpod['session'] == session)    
-        ].to_dict(orient='records')[0]
-    
-    if not match or len(meta_dict) == 0:
+        ].to_dict(orient='records')
+            
+    if not match or len(df_this) == 0:
         logger.warning(f"Cannot find meta info from df_sessions.pkl for {bpod_session_id}")
         # return a dict with all nan but with the same columns
-        return {k: np.nan for k in df_session_bpod.columns}
-    return meta_dict
+        return None
+    return df_this[0]
 
 
 def _get_trial_event_time(nwb, event_name, trial_start_time, trial_stop_time):
@@ -74,7 +73,8 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     # Time info
     session_start_time = bpod_nwb.session_start_time.replace(tzinfo=tzlocal())
     session_run_time_in_min = meta_dict_from_pkl['session_length_in_hrs'] * 60
-    session_end_time = session_start_time + timedelta(minutes=session_run_time_in_min)
+    session_end_time = (session_start_time + timedelta(minutes=session_run_time_in_min))\
+        if not np.isnan(session_run_time_in_min) else np.nan
 
     # New NWB file name
     bonsai_nwb_name = (f"{bpod_nwb.subject.subject_id}_"
@@ -429,7 +429,6 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
     bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
     
     # --- Save NWB file in bonsai_nwb format ---
-    
     if len(bonsai_nwb.trials) > 0:
         NWBName = os.path.join(save_folder, bonsai_nwb_name)
         io = NWBHDF5IO(NWBName, mode="w")
@@ -448,6 +447,8 @@ def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file):
     
     try:
         meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=nwb.identifier)
+        if meta_dict_from_pkl is None:
+            return 'missing_meta'
         return nwb_bpod_to_bonsai(nwb, meta_dict_from_pkl)
     except Exception as e:
         logger.error(f'{bpod_nwb_file}: {e}')
@@ -473,7 +474,7 @@ if __name__ == '__main__':
     # bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     
     # For debugging
-    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/668546/668546_20230622_3.nwb']
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/FOR10/FOR10_20191024_142.nwb']
     
     if len(bpod_nwb_files) == 1:
         convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])
@@ -490,7 +491,8 @@ if __name__ == '__main__':
                 results.append(job.get())
             
         logger.info(f'\nProcessed {len(results)} files: '
-                f'{results.count("success")} successfully converted; '             
+                f'{results.count("success")} successfully converted; '
+                f'{results.count("missing_meta")} missing meta, '
                 f'{results.count("empty_trials")} empty_trials, '
                 f'{results.count("uncaught_error")} uncaught error\n\n')
     
