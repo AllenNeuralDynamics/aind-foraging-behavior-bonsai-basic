@@ -442,7 +442,6 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
 
 
 def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing=True):
-    logger.info(f'Processing {bpod_nwb_file}...')
     io = NWBHDF5IO(bpod_nwb_file, mode='r')
     bpod_nwb = io.read()
     
@@ -455,6 +454,7 @@ def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing=True):
     ):
         return 'already_exists'
     
+    logger.info(f'Processing {bpod_nwb_file}...')
     try:
         meta_dict_from_pkl = get_meta_dict_from_session_pkl(bpod_session_id=bpod_nwb.identifier)
         if meta_dict_from_pkl is None:
