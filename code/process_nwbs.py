@@ -175,7 +175,7 @@ def compute_df_session_meta(nwb, df_trial):
     
     # -- Pack data --
     dict_meta = {
-        'rig': meta_dict['box'],
+        'rig': meta_dict['box'],        
         'user_name': nwb.experimenter[0],
         'experiment_description': nwb.experiment_description,
         'task': nwb.protocol,
@@ -234,7 +234,11 @@ def compute_df_session_meta(nwb, df_trial):
             df_trial[f'lickspout_position_{axis}'][0] for axis in 'xyz'},
         **{f'lickspout_median_pos_{axis}': 
             np.median(df_trial[f'lickspout_position_{axis}']) for axis in 'xyz'},
-        }
+    }
+    
+    if 'bpod' in nwb.session_description:
+        # Add a flag indicating this is an old bpod session
+        dict_meta['old_bpod_session'] = True
 
     df_meta = pd.DataFrame(dict_meta, 
                             index=session_index,
