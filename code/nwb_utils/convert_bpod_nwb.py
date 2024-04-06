@@ -116,7 +116,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s") if isinstance(session_end_time, (date, datetime)) else np.nan,
         'session_run_time_in_min': session_run_time_in_min, 
         'has_video': 'BehavioralTimeSeries' in bpod_nwb.acquisition,
-        'has_ephys': hasattr(bpod_nwb, 'units'),
+        'has_ephys': bpod_nwb.units is not None,
         
         
         # Water (all in mL)
@@ -431,7 +431,7 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         )
     bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
     
-    # --- Add video and ephys, if exist ---
+    # --- Add DLC outputs, if exists ---
     if 'BehavioralTimeSeries' in bpod_nwb.acquisition:
         bpod_dlc = behavior.BehavioralTimeSeries(
             name='bpod_backup_BehavioralTimeSeries',
@@ -446,9 +446,17 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
                 
             bpod_dlc.create_timeseries(**data_from_bpod)
         bonsai_nwb.add_acquisition(bpod_dlc)
-            
-    if hasattr(bpod_nwb, 'units'):
-        pass
+        
+        bonsai_nwb.add_scratch(bpod_nwb.scratch['video_frame_mapping'].to_dataframe(),
+                               name='bpod_backup_video_frame_mapping',
+                               description=bpod_nwb.scratch['video_frame_mapping'].description)
+
+    # --- Add ephys, if exists ---            
+    if bpod_nwb.units is not None:
+        bonsai_nwb.units = bpod_nwb.units
+        bonsai_nwb.devices = bpod_nwb.devices
+        bonsai_nwb.electrode_groups = bpod_nwb.electrode_groups
+        bonsai_nwb.electrodes = bpod_nwb.electrodes
     
     # --- Save NWB file in bonsai_nwb format ---
     if len(bonsai_nwb.trials) > 0:
