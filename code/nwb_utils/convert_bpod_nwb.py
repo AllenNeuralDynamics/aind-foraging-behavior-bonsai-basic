@@ -480,7 +480,7 @@ if __name__ == '__main__':
     logger.addHandler(logging.StreamHandler())
         
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
-    bpod_nwb_files_all = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
+    bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     skip_existing = True # by default, skip existing files
     
     # For debugging
