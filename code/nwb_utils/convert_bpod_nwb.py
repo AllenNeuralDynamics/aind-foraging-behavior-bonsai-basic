@@ -445,11 +445,20 @@ def convert_one_bpod_to_bonsai_nwb(bpod_nwb_file):
    
 
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(logging.StreamHandler())
-    
     import multiprocessing as mp
     import tqdm
+
+    # Create a file handler with the specified file path
+    logger.setLevel(level=logging.INFO)
+    file_handler = logging.FileHandler(f"/root/capsule/results/convert_bpod_to_bonsai.log")
+    formatter = logging.Formatter('%(asctime)s %(levelname)s [%(filename)s:%(funcName)s]: %(message)s', 
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Send logging to terminal as well
+    logger.addHandler(logging.StreamHandler())
+        
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
