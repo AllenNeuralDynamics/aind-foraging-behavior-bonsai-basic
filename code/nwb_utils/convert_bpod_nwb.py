@@ -463,8 +463,6 @@ if __name__ == '__main__':
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     
-    bpod_nwb_files = bpod_nwb_files[:16]
-
     n_cpus = 16
     results = []
     

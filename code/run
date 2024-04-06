@@ -2,4 +2,6 @@
 set -ex
 
 # This is the master script for the capsule. When you click "Reproducible Run", the code in this file will execute.
-python -u process_nwbs.py "$@"
+# python -u process_nwbs.py "$@"
+
+python -u /nwb_utils/convert_bpod_nwb.py "$@"  # Batch converting bpod nwb to bonsai nwb
