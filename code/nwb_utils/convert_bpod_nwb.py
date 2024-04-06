@@ -115,6 +115,9 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         'box': meta_dict_from_pkl['rig'] + '_bpod', # Add _bpod suffix to distinguish from bonsai
         'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s") if isinstance(session_end_time, (date, datetime)) else np.nan,
         'session_run_time_in_min': session_run_time_in_min, 
+        'has_video': 'BehavioralTimeSeries' in bpod_nwb.acquisition,
+        'has_ephys': hasattr(bpod_nwb, 'units'),
+        
         
         # Water (all in mL)
         'water_in_session_foraging': np.nan, # Not directly available in old bpod nwb
@@ -428,6 +431,25 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         )
     bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
     
+    # --- Add video and ephys, if exist ---
+    if 'BehavioralTimeSeries' in bpod_nwb.acquisition:
+        bpod_dlc = behavior.BehavioralTimeSeries(
+            name='bpod_backup_BehavioralTimeSeries',
+        )
+        for acq, dlc in bpod_nwb.acquisition['BehavioralTimeSeries'].time_series.items():
+            data_from_bpod = {f: v for f, v in dlc.fields.items() if f not in ['timestamps_unit', 'interval']}
+            data_from_bpod['name'] = dlc.name
+            
+            if acq == 'pupil_size_polygon':
+                # fix empty timestamps problem
+                data_from_bpod['timestamps'] = bpod_nwb.acquisition['BehavioralTimeSeries']['Camera0_side_pupil_side_Down'].timestamps
+                
+            bpod_dlc.create_timeseries(**data_from_bpod)
+        bonsai_nwb.add_acquisition(bpod_dlc)
+            
+    if hasattr(bpod_nwb, 'units'):
+        pass
+    
     # --- Save NWB file in bonsai_nwb format ---
     if len(bonsai_nwb.trials) > 0:
         NWBName = os.path.join(save_folder, bonsai_nwb_name)
@@ -483,14 +505,14 @@ if __name__ == '__main__':
         
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
-    skip_existing = True # by default, skip existing files
+    skip_existing = False # by default, skip existing files
     bpod_nwb_files = bpod_nwb_files[1200:]
 
     # For debugging
-    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH09/HH09_20210609_57.nwb']
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
     
-    if len(bpod_nwb_files) == 1:
-        results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])]
+    if len(bpod_nwb_files) > 0:
+        results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing) for bpod_nwb_file in bpod_nwb_files]
     else:
         n_cpus = 16
         results = []
