@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 from dateutil.tz import tzlocal
 
-from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior
+from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior, file
 from pynwb.file import Subject
 from scipy.io import loadmat
 
@@ -115,6 +115,9 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         'box': meta_dict_from_pkl['rig'] + '_bpod', # Add _bpod suffix to distinguish from bonsai
         'session_end_time': session_end_time.strftime(r"%Y-%m-%d %H:%M:%S.%s") if isinstance(session_end_time, (date, datetime)) else np.nan,
         'session_run_time_in_min': session_run_time_in_min, 
+        'has_video': 'BehavioralTimeSeries' in bpod_nwb.acquisition,
+        'has_ephys': bpod_nwb.units is not None,
+        
         
         # Water (all in mL)
         'water_in_session_foraging': np.nan, # Not directly available in old bpod nwb
@@ -428,6 +431,79 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         )
     bonsai_nwb.add_acquisition(bpod_backup_behavioral_event)
     
+    # --- Add DLC outputs, if exists ---
+    if 'BehavioralTimeSeries' in bpod_nwb.acquisition:
+        bpod_dlc = behavior.BehavioralTimeSeries(
+            name='bpod_backup_BehavioralTimeSeries',
+        )
+        for acq, dlc in bpod_nwb.acquisition['BehavioralTimeSeries'].time_series.items():
+            data_from_bpod = {f: v for f, v in dlc.fields.items() if f not in ['timestamps_unit', 'interval']}
+            data_from_bpod['name'] = dlc.name
+            
+            if acq == 'pupil_size_polygon':
+                # fix empty timestamps problem
+                data_from_bpod['timestamps'] = bpod_nwb.acquisition['BehavioralTimeSeries']['Camera0_side_pupil_side_Down'].timestamps
+                
+            bpod_dlc.create_timeseries(**data_from_bpod)
+        bonsai_nwb.add_acquisition(bpod_dlc)
+        
+        bonsai_nwb.add_scratch(bpod_nwb.scratch['video_frame_mapping'].to_dataframe(),
+                               name='bpod_backup_video_frame_mapping',
+                               description=bpod_nwb.scratch['video_frame_mapping'].description)
+
+    # --- Add ephys, if exists ---
+    # NWB is a nightmare to work with!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # You cannot copy the fields directly; you have to create each field from scratch and do deep copy manually
+    # or am I missing something??
+    if bpod_nwb.units is not None:
+        
+        # Add devices
+        for k, v in bpod_nwb.devices.items():
+            bonsai_nwb.create_device(name=k)
+            
+        # Add electrodes_groups
+        for k, v in bpod_nwb.electrode_groups.items():
+            bonsai_nwb.create_electrode_group(
+                name=v.name,
+                description=v.description,
+                device=bonsai_nwb.get_device(v.device.name),
+                location=v.location,
+            )
+            
+        # Add electrodes
+        for extra_column in ['shank_row', 'electrode_id', 'shank_col', 'ccf_annotation', 'shank']:
+            bonsai_nwb.add_electrode_column(
+                name=bpod_nwb.electrodes[extra_column].name,
+                description=bpod_nwb.electrodes[extra_column].description,
+            )
+        for e in bpod_nwb.electrodes:
+            e = e.iloc[0]
+            bonsai_nwb.add_electrode(
+                group=bonsai_nwb.get_electrode_group(e.group.name),
+                **{f: e[f] for f in e.keys() if f not in ['group']}
+            )
+        
+        # Add units. Fianllay!!
+        bonsai_nwb.units = file.Units(
+            name=bpod_nwb.units.name,
+            description=bpod_nwb.units.description,
+        )
+        for col in bpod_nwb.units.colnames:
+            if col in ['spike_times', 'electrodes']:
+                # Don't add column `spike_times` and 'electrodes' to avoid inhomogeneous error
+                # leave them as nwb internal data type that enables DynamicTable (spike_times + spike_times_index)
+                continue
+            bonsai_nwb.add_unit_column(
+                name=bpod_nwb.units[col].name,
+                description=bpod_nwb.units[col].description,
+            )
+        for u in bpod_nwb.units:
+            u = u.iloc[0]
+            bonsai_nwb.add_unit(
+                **{f: u[f] for f in u.keys()},
+            )
+        
+    
     # --- Save NWB file in bonsai_nwb format ---
     if len(bonsai_nwb.trials) > 0:
         NWBName = os.path.join(save_folder, bonsai_nwb_name)
@@ -484,15 +560,14 @@ if __name__ == '__main__':
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
     skip_existing = True # by default, skip existing files
-    bpod_nwb_files = bpod_nwb_files[1200:]
 
     # For debugging
-    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH09/HH09_20210609_57.nwb']
+    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
     
     if len(bpod_nwb_files) == 1:
-        results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_files[0])]
+        results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing) for bpod_nwb_file in bpod_nwb_files]
     else:
-        n_cpus = 16
+        n_cpus = 32
         results = []
         
         logger.info(f'Starting multiprocessing with {n_cpus} cores...')
