@@ -1,5 +1,17 @@
 """Manually process all old bpod nwb files
 
+Each time we decide to populate new analysis to the old bpod sessions, we should 
+1. "Reproducible Run" this script manually (by enabling `python -u process_nwbs_bpod_manual_batch.py "$@"` in the run script)
+2. Create a data asset from the results folder
+3. Attache the data asset to "Collect and Upload" capsule and run it
+
+See https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-trigger-pipeline?tab=readme-ov-file#notes-on-manually-re-process-all-nwbs-and-overwrite-s3-database-and-thus-the-streamlit-app
+
+IMPORTANT NOTES: 
+If you want to debug in VS Code rather than "Reproducible Run", you may run into a problem that nwb files cannot be loaded.
+If this happens, try copying the nwb files to the /scratch folder.
+See my frustrating experience here: https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/issues/28#issuecomment-2041350746
+
 """
 
 import glob
@@ -24,21 +36,13 @@ logger = logging.getLogger(__name__)
 if __name__ == '__main__':
     
     data_folder = '/root/capsule/data/foraging_nwb_bpod'
-    scratch_folder = '/scratch/foraging_nwb_bpod'
     result_folder = '/root/capsule/results'
 
-    # Somehow for converted old bpod nwbs, I have to copy them to scratch...
-    # See https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/issues/28#issuecomment-2041309175
-    if not os.path.exists(scratch_folder):
-        logger.info('Copying files to scratch...')
-        shutil.copytree(data_folder, scratch_folder)
-
-    # By default, process all nwb files under /data/foraging_nwb_bonsai folder
-    # In the CO pipeline, upstream capsule will assign jobs by putting nwb files to this folder
-    nwb_file_names = glob.glob(f'{scratch_folder}/**/*.nwb', recursive=True)
+    # Make sure `foraging_nwb_bpod` is attached
+    nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
     
     # DEBUG OVERRIDE
-    # nwb_file_names = ['/root/capsule/data/foraging_nwb_bpod/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
+    # nwb_file_names = [f'{data_folder}/447921_2019-09-11_13-56-46.nwb']  # Test bpod session
     
     logger.info(f'{len(nwb_file_names)} nwb files to process.')
 
