@@ -11,6 +11,8 @@ from pathlib import Path
 import json
 from matplotlib import pyplot as plt
 import shutil
+import multiprocessing as mp
+import tqdm
 
 from analysis.analysis_wrapper import compute_logistic_regression
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
@@ -553,8 +555,6 @@ def add_session_number(df):
     
 #%%
 if __name__ == '__main__':
-    import multiprocessing as mp
-    import tqdm
     
     # ----------------------------
     LOCAL_MANUAL_OVERRIDE = False   # If true, local batch process all nwb files in /data/foraging_nwb_bonsai with n_CPUs = 16
@@ -575,6 +575,7 @@ if __name__ == '__main__':
     logger.addHandler(logging.StreamHandler())
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
+    # In the CO pipeline, upstream capsule will assign jobs by putting nwb files to this folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
