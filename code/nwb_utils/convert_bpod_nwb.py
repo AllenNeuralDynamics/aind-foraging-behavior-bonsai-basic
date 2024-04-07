@@ -559,11 +559,10 @@ if __name__ == '__main__':
         
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
-    skip_existing = False # by default, skip existing files
-    bpod_nwb_files = bpod_nwb_files[1200:]
+    skip_existing = True # by default, skip existing files
 
     # For debugging
-    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
+    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
     
     if len(bpod_nwb_files) > 0:
         results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing) for bpod_nwb_file in bpod_nwb_files]
