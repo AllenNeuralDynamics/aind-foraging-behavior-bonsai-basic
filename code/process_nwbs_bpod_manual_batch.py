@@ -5,6 +5,7 @@
 import glob
 import os
 import logging
+import shutil
 
 import multiprocessing as mp
 import tqdm
@@ -23,14 +24,21 @@ logger = logging.getLogger(__name__)
 if __name__ == '__main__':
     
     data_folder = '/root/capsule/data/foraging_nwb_bpod'
+    scratch_folder = '/scratch/foraging_nwb_bpod'
     result_folder = '/root/capsule/results'
+
+    # Somehow for converted old bpod nwbs, I have to copy them to scratch...
+    # See https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/issues/28#issuecomment-2041309175
+    if not os.path.exists(scratch_folder):
+        logger.info('Copying files to scratch...')
+        shutil.copytree(data_folder, scratch_folder)
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
     # In the CO pipeline, upstream capsule will assign jobs by putting nwb files to this folder
-    nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
+    nwb_file_names = glob.glob(f'{scratch_folder}/**/*.nwb', recursive=True)
     
     # DEBUG OVERRIDE
-    nwb_file_names = ['/root/capsule/data/foraging_nwb_bpod/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
+    # nwb_file_names = ['/root/capsule/data/foraging_nwb_bpod/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
     
     logger.info(f'{len(nwb_file_names)} nwb files to process.')
 

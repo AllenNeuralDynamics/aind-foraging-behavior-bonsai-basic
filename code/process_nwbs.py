@@ -443,15 +443,8 @@ def log_error_file(file_name, result_root):
         json.dump(error_files, file, indent=4)
     
 def load_nwb_from_data_asset(nwb_file_name):
-    if 'bpod' in nwb_file_name:
-        # Somehow for converted old bpod nwbs, I have to copy them to scratch...
-        # See https://github.com/AllenNeuralDynamics/aind-foraging-behavior-bonsai-basic/issues/28#issuecomment-2041309175
-        shutil.copy(nwb_file_name, '/scratch/tmp.nwb')
-        io = NWBHDF5IO('/scratch/tmp.nwb', mode='r')
-        nwb = io.read()
-    else:
-        io = NWBHDF5IO(nwb_file_name, mode='r')
-        nwb = io.read()
+    io = NWBHDF5IO(nwb_file_name, mode='r')
+    nwb = io.read()
     return nwb
 
 
@@ -585,9 +578,7 @@ if __name__ == '__main__':
         # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
         # to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
-        
-    nwb_file_names = ['/root/capsule/data/foraging_nwb_bpod/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
-    
+            
     logger.info(f'nwb files to process: {nwb_file_names}')
 
     # Note that in Code Ocean, mp.cpu_count() is not necessarily the number of cores available in this session.
