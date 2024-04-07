@@ -10,6 +10,9 @@ from pynwb import NWBFile, TimeSeries, NWBHDF5IO
 from pathlib import Path
 import json
 from matplotlib import pyplot as plt
+import shutil
+import multiprocessing as mp
+import tqdm
 
 from analysis.analysis_wrapper import compute_logistic_regression
 from analysis.util import foraging_eff_baiting, foraging_eff_no_baiting
@@ -438,7 +441,12 @@ def log_error_file(file_name, result_root):
     # Write the updated list back to the JSON file
     with open(error_file_path, 'w') as file:
         json.dump(error_files, file, indent=4)
-        
+    
+def load_nwb_from_data_asset(nwb_file_name):
+    io = NWBHDF5IO(nwb_file_name, mode='r')
+    nwb = io.read()
+    return nwb
+
 
 def process_one_nwb(nwb_file_name, result_root):
     '''
@@ -447,8 +455,7 @@ def process_one_nwb(nwb_file_name, result_root):
     logger.info(f'{nwb_file_name} processing...')
     
     try:
-        io = NWBHDF5IO(nwb_file_name, mode='r')
-        nwb = io.read()
+        nwb = load_nwb_from_data_asset(nwb_file_name)
         df_session, df_trial = nwb_to_dfs(nwb)
         
         # Create folder if not exist
@@ -541,8 +548,6 @@ def add_session_number(df):
     
 #%%
 if __name__ == '__main__':
-    import multiprocessing as mp
-    import tqdm
     
     # ----------------------------
     LOCAL_MANUAL_OVERRIDE = False   # If true, local batch process all nwb files in /data/foraging_nwb_bonsai with n_CPUs = 16
@@ -550,7 +555,6 @@ if __name__ == '__main__':
     
     data_folder = os.path.join(script_dir, '../data/foraging_nwb_bonsai')
     result_folder = os.path.join(script_dir, '../results')
-    result_folder_s3 = 's3://aind-behavior-data/foraging_nwb_bonsai_processed/'
 
     # Create a file handler with the specified file path
     logger.setLevel(level=logging.INFO)
@@ -564,6 +568,7 @@ if __name__ == '__main__':
     logger.addHandler(logging.StreamHandler())
 
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder
+    # In the CO pipeline, upstream capsule will assign jobs by putting nwb files to this folder
     nwb_file_names = glob.glob(f'{data_folder}/**/*.nwb', recursive=True)
 
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
@@ -573,9 +578,7 @@ if __name__ == '__main__':
         # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
         # to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
         nwb_file_names = [f for f in nwb_file_names if to_debug in f]
-        
-    # nwb_file_names = ['/root/capsule/results/452272_2019-11-08_18-29-44.nwb']  # Test bpod session
-    
+            
     logger.info(f'nwb files to process: {nwb_file_names}')
 
     # Note that in Code Ocean, mp.cpu_count() is not necessarily the number of cores available in this session.

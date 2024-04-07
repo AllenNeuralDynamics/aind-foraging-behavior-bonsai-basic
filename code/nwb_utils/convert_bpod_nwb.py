@@ -13,6 +13,7 @@ import logging
 import pandas as pd
 from dateutil.tz import tzlocal
 
+import pynwb
 from pynwb import NWBHDF5IO, NWBFile, TimeSeries, behavior, file
 from pynwb.file import Subject
 from scipy.io import loadmat
@@ -510,8 +511,16 @@ def nwb_bpod_to_bonsai(bpod_nwb, meta_dict_from_pkl, save_folder=save_folder):
         io = NWBHDF5IO(NWBName, mode="w")
         io.write(bonsai_nwb)
         io.close()
-        logger.info(f'Successfully converted: {NWBName}')
-        return 'success'
+        
+        with NWBHDF5IO(NWBName, mode='r') as io:
+            validation_status = pynwb.validate(io=io)
+
+        if len(validation_status) > 0:
+            logger.error(f"Validation failed for {bonsai_nwb_name}")
+            return 'validation_failed'
+        else:
+            logger.info(f'Successfully converted: {NWBName}')
+            return 'success'
     else:
         logger.warning(f"No trials found! Skipping {fname}")
         return 'empty_trials'
@@ -559,10 +568,10 @@ if __name__ == '__main__':
         
     # By default, process all nwb files under /data/foraging_nwb_bonsai folder that do not exist in /data/foraging_nwb_bpod
     bpod_nwb_files = glob.glob(f'{bpod_nwb_folder}/**/*.nwb', recursive=True)
-    skip_existing = True # by default, skip existing files
+    skip_existing = False # by default, skip existing files
 
     # For debugging
-    # bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
+    bpod_nwb_files = ['/root/capsule/data/s3_foraging_all_nwb/HH08/HH08_20210812_49.nwb']
     
     if len(bpod_nwb_files) == 1:
         results = [convert_one_bpod_to_bonsai_nwb(bpod_nwb_file, skip_existing) for bpod_nwb_file in bpod_nwb_files]
@@ -580,6 +589,7 @@ if __name__ == '__main__':
             
     logger.info(f'\nProcessed {len(results)} files: '
             f'{results.count("success")} successfully converted; '
+            f'{results.count("validation_failed")} save successful but validation failed, '
             f'{results.count("already_exists")} already existed, '
             f'{results.count("missing_meta")} missing meta, '
             f'{results.count("empty_trials")} empty_trials, '
