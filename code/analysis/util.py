@@ -1,4 +1,13 @@
+
 import numpy as np
+
+"""
+NOTES on foraging efficiency
+
+Definition of foraging efficiency (i.e., a single value measurement to quantify "performance") is a complex and unsolved topic especially in the context of reward baiting. I have a presentation for this (https://alleninstitute.sharepoint.com/:p:/s/NeuralDynamics/EejfBIEvFA5DjmfOZV8atWgBx7q68GsKnavkVrfghL9y8g?e=OnR5r4). Simply speaking, foraging eff = actual reward rate of the mouse / reward rate of an ideal observer in the same session. The question is how to define the ideal observer. For the coupled-block-with-baiting task (Jeremiah's 2019 Neuron paper), I assume the ideal observer knows the underlying reward probability and the baiting dynamics, and do the optimal choice pattern ("fix-and-sample" in this case, see references on p.24 of my slides). For the non-baiting task (Cooper Grossman), I assume the ideal observer knows the underlying probability and makes the greedy choice. To account for the randomness of each actual session, I simulated the ideal observers using the actual random seed I used during the experiment.
+
+This might not be the best way because the ideal observers I assumed is kind of cheating in the sense that they already know the underlying probability, but it sets an upper bound for all realistic agents, at least in an average sense. For a single session, however, there are chances where the efficiency can be larger than 1 because of the randomness of the task (sometimes the mice are really lucky that they get more reward than performing "optimally")
+"""
 
 def foraging_eff_no_baiting(reward_rate, p_Ls, p_Rs, random_number_L=None, random_number_R=None):  # Calculate foraging efficiency (only for 2lp)
         
