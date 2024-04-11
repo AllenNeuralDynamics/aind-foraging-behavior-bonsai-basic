@@ -254,10 +254,10 @@ def compute_df_session_meta(nwb, df_trial):
     
     # -- Add automatic training --
     if 'auto_train_engaged' in df_trial.columns:       
-        df_meta['auto_train', 'curriculum_name'] = np.nan if df_trial.auto_train_curriculum_name.mode()[0] == 'none' else df_trial.auto_train_curriculum_name.mode()[0]
-        df_meta['auto_train', 'curriculum_version'] = np.nan if df_trial.auto_train_curriculum_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_version.mode()[0]
-        df_meta['auto_train', 'curriculum_schema_version'] = np.nan if df_trial.auto_train_curriculum_schema_version.mode()[0] == 'none' else df_trial.auto_train_curriculum_schema_version.mode()[0]
-        df_meta['auto_train', 'current_stage_actual'] = np.nan if df_trial.auto_train_stage.mode()[0] == 'none' else df_trial.auto_train_stage.mode()[0]
+        df_meta['auto_train', 'curriculum_name'] = np.nan if lower(df_trial.auto_train_curriculum_name.mode()[0]) == 'none' else df_trial.auto_train_curriculum_name.mode()[0]
+        df_meta['auto_train', 'curriculum_version'] = np.nan if lower(df_trial.auto_train_curriculum_version.mode()[0]) == 'none' else df_trial.auto_train_curriculum_version.mode()[0]
+        df_meta['auto_train', 'curriculum_schema_version'] = np.nan if lower(df_trial.auto_train_curriculum_schema_version.mode()[0]) == 'none' else df_trial.auto_train_curriculum_schema_version.mode()[0]
+        df_meta['auto_train', 'current_stage_actual'] = np.nan if lower(df_trial.auto_train_stage.mode()[0]) == 'none' else df_trial.auto_train_stage.mode()[0]
         df_meta['auto_train', 'if_overriden_by_trainer'] = np.nan if all(df_trial.auto_train_stage_overridden.isna()) else df_trial.auto_train_stage_overridden.mode()[0]
         
         # Add a flag to indicate whether any of the auto train settings were changed during the training
