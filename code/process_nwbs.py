@@ -579,11 +579,13 @@ if __name__ == '__main__':
     if_debug_mode = len(sys.argv) == 1 # In pipeline, add any argument to trigger pipeline mode.
 
     if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
-        # to_debug = '697929_2024-02-22_08-38-30.nwb' # coupled first session example
-        # to_debug = '713557_2024-03-01_08-50-40.nwb' # coupled well-trained example
-        # to_debug = '703548_2024-03-01_08-51-32.nwb'   # uncoupled well-trained example
-        to_debug = '714314_2024-04-10_14-38-52'
-        nwb_file_names = [f for f in nwb_file_names if to_debug in f]
+        to_debug = [
+            '697929_2024-02-22_08-38-30.nwb', # coupled first session example
+            '713557_2024-03-01_08-50-40.nwb', # coupled well-trained example
+            '703548_2024-03-01_08-51-32.nwb',   # uncoupled well-trained example
+            '714314_2024-04-10_14-38-52', # new nwb format starting from https://github.com/AllenNeuralDynamics/dynamic-foraging-task/pull/369
+        ]  
+        nwb_file_names = [f for f in nwb_file_names if any(dd in f for dd in to_debug)]
             
     logger.info(f'nwb files to process: {nwb_file_names}')
 
