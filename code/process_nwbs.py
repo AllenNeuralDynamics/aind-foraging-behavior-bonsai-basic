@@ -15,7 +15,7 @@ import multiprocessing as mp
 import tqdm
 
 from analysis.analysis_wrapper import compute_logistic_regression
-from plot.foraging_matplotlib import plot_session_lightweight
+from aind_dynamic_foraging_basic_analysis import plot_foraging_session
 
 from aind_dynamic_foraging_basic_analysis import compute_foraging_efficiency
 
@@ -413,9 +413,9 @@ def plot_session_choice_history(nwb):
 
     # Reformat data
     choice_history = df_trial.animal_response.map({0: 0, 1: 1, 2: np.nan}).values
-    reward_history = np.vstack([df_trial.rewarded_historyL, df_trial.rewarded_historyR])
+    reward_history = df_trial.rewarded_historyL | df_trial.rewarded_historyR
     p_reward = np.vstack([df_trial.reward_probabilityL, df_trial.reward_probabilityR])
-    autowater_offered_history = np.vstack([df_trial.auto_waterL, df_trial.auto_waterR])
+    autowater_offered_history = (df_trial.auto_waterL == 1) | (df_trial.auto_waterR == 1)
 
     # photostim
     if 'laser_power' in df_trial:  # Backward compatibility #(a quick fix -- only extract trials which have photostim on ANY side)
@@ -424,14 +424,20 @@ def plot_session_choice_history(nwb):
         laser_power_cols = ['laser_1_power', 'laser_2_power']
     
     df_trial['laser_avg_power'] = df_trial[laser_power_cols].mean(axis=1)
-    photostim = [df_trial.trial[df_trial['laser_avg_power'] > 0], df_trial.laser_avg_power[df_trial['laser_avg_power'] > 0], []]
+    photostim = {
+        "trial": df_trial.trial[df_trial['laser_avg_power'] > 0], 
+        "power": df_trial.laser_avg_power[df_trial['laser_avg_power'] > 0], 
+        "stim_epoch": None,
+    }
 
-    # Plot session
-    fig, axes = plot_session_lightweight(choice_history=np.array([choice_history]), 
-                                       reward_history_non_autowater=reward_history, 
-                                       p_reward=p_reward,
-                                       autowater_offered_history=autowater_offered_history,
-                                       photostim=photostim)
+    # Plot session    
+    fig, axes = plot_foraging_session(
+        choice_history=choice_history,
+        reward_history=reward_history,
+        p_reward=p_reward,
+        autowater_offered=autowater_offered_history,
+        photostim=photostim,        
+    )
     
     return fig, axes
 
