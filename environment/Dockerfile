@@ -19,7 +19,8 @@ RUN pip install -U --no-cache-dir \
     s3fs \
     awscli \
     aind_codeocean_api==0.2.3\
-    aind-dynamic-foraging-models==0.1.5
+    aind-dynamic-foraging-models==0.1.5\
+    aind-dynamic-foraging-basic-analysis
 
 ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
 	
