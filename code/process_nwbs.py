@@ -15,9 +15,8 @@ import multiprocessing as mp
 import tqdm
 
 from analysis.analysis_wrapper import compute_logistic_regression
-from aind_dynamic_foraging_basic_analysis import plot_foraging_session
-
-from aind_dynamic_foraging_basic_analysis import compute_foraging_efficiency
+from aind_dynamic_foraging_basic_analysis import plot_foraging_session, compute_foraging_efficiency
+from aind_dynamic_foraging_basic_analysis.lick_analysis import plot_lick_analysis
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -526,13 +525,22 @@ def process_one_nwb(nwb_file_name, result_root):
             plt.close(fig)
         logger.info(f'{nwb_file_name} 2. Logistic regression done.')
     
+        # --- 3. Lick analysis ---
+        try:
+            fig, _ = plot_lick_analysis(nwb)
+            fig.savefig(result_folder + '/' + f'{session_id}_lick_analysis.png',
+                            bbox_inches='tight')
+            plt.close(fig)
+            logger.info(f'{nwb_file_name} 3. Lick analysis done.')
+        except Exception as e:
+            logger.error(f'{nwb_file_name} Lick analysis failed!')
+        
         # TODO: add more analyses like this
         
         # --- Final. Save df_session and df_trial ---
         pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
         pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
-        logger.info(f'{nwb_file_name} 3. df_session and df_trial done.')
-
+        logger.info(f'{nwb_file_name} 4. df_session and df_trial done.')
         
     except Exception as e:
         logger.error(f'{nwb_file_name} failed!!', exc_info=True)
