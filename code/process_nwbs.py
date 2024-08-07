@@ -526,18 +526,21 @@ def process_one_nwb(nwb_file_name, result_root):
         logger.info(f'{nwb_file_name} 2. Logistic regression done.')
     
         # --- 3. Lick analysis ---
-        fig, _ = plot_lick_analysis(nwb)
-        fig.savefig(result_folder + '/' + f'{session_id}_lick_analysis.png',
-                        bbox_inches='tight')
-        plt.close(fig)
+        try:
+            fig, _ = plot_lick_analysis(nwb)
+            fig.savefig(result_folder + '/' + f'{session_id}_lick_analysis.png',
+                            bbox_inches='tight')
+            plt.close(fig)
+            logger.info(f'{nwb_file_name} 3. Lick analysis done.')
+        except Exception as e:
+            logger.error(f'{nwb_file_name} Lick analysis failed!')
         
         # TODO: add more analyses like this
         
         # --- Final. Save df_session and df_trial ---
         pd.to_pickle(df_session, result_folder + '/' + f'{session_id}_df_session.pkl')
         pd.to_pickle(df_trial, result_folder + '/' + f'{session_id}_df_trial.pkl')
-        logger.info(f'{nwb_file_name} 3. df_session and df_trial done.')
-
+        logger.info(f'{nwb_file_name} 4. df_session and df_trial done.')
         
     except Exception as e:
         logger.error(f'{nwb_file_name} failed!!', exc_info=True)
