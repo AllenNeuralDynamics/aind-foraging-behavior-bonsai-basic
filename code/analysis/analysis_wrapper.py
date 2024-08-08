@@ -25,6 +25,7 @@ def compute_logistic_regression(nwb) -> Tuple[
     """
     df_session_logistic_regression = pd.DataFrame()
     dict_figures = {}
+    dict_df_beta = {}
 
     df_trial = nwb.trials.to_dataframe()
     
@@ -78,6 +79,12 @@ def compute_logistic_regression(nwb) -> Tuple[
                     0, f'logistic_{model_name}_score_std'
                 ] = score_std
         
+        # Add raw betas from cross-validation
+        df_beta_cv = dict_logistic_result['df_beta']['cross_validation']
+        dict_df_beta[model_name] = pd.DataFrame([df_beta_cv], 
+                               columns=df_beta_cv.index)  # Turn to one row with multi-index columns
+        
+        
         dict_figures[model_name] = ax.figure
     
-    return df_session_logistic_regression, dict_figures
+    return df_session_logistic_regression, dict_figures, dict_df_beta
