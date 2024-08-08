@@ -513,8 +513,6 @@ def process_one_nwb(nwb_file_name, result_root):
         df_session_logistic_regression.columns = pd.MultiIndex.from_product(
             [['logistic_regression'], 
              df_session_logistic_regression.columns])
-        pd.to_pickle(df_session_logistic_regression, 
-                     result_folder + '/' + f'{session_id}_df_session_logistic_regression.pkl')
         # Merge df_session_logistic_regression to df_session 
         # (TODO: this should happen elsewhere, see https://github.com/orgs/AllenNeuralDynamics/projects/70/views/4?pane=issue&itemId=57992307)
         df_session = pd.concat([df_session, df_session_logistic_regression], axis=1)
