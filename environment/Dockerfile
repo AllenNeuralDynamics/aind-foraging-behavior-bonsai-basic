@@ -11,7 +11,7 @@ RUN pip install -U --no-cache-dir \
     matplotlib==3.7.1 \
     pandas==2.0.1 \
     plotly==5.15.0 \
-    pynwb==2.3.2 \
+    pynwb==2.8.1 \
     seaborn==0.12.2 \
     xarray==2023.4.2 \
     zarr==2.14.2 \
@@ -19,8 +19,8 @@ RUN pip install -U --no-cache-dir \
     s3fs \
     awscli \
     aind_codeocean_api==0.2.3\
-    aind-dynamic-foraging-models==0.1.5\
-    aind-dynamic-foraging-basic-analysis
+    aind-dynamic-foraging-models==0.1.6\
+    aind-dynamic-foraging-basic-analysis==0.2.3 
 
 ADD "https://github.com/coder/code-server/releases/download/v4.9.0/code-server-4.9.0-linux-amd64.tar.gz" /.code-server/code-server.tar.gz
 	
