@@ -25,6 +25,7 @@ def compute_logistic_regression(nwb) -> Tuple[
     """
     df_session_logistic_regression = pd.DataFrame()
     dict_figures = {}
+    dict_df_beta = {}
 
     df_trial = nwb.trials.to_dataframe()
     
@@ -46,7 +47,7 @@ def compute_logistic_regression(nwb) -> Tuple[
                                 selected_trial_idx=None,
                                 solver='liblinear', 
                                 penalty='l2',
-                                Cs=10,
+                                Cs=20,
                                 cv=10,
                                 n_jobs_cross_validation=1,
                                 n_bootstrap_iters=1000, 
@@ -65,7 +66,25 @@ def compute_logistic_regression(nwb) -> Tuple[
         df_session_logistic_regression.loc[
                     0, f'logistic_{model_name}_bias'
                 ] = dict_logistic_result['df_beta'].loc['bias']['cross_validation'].values[0]
-
+        
+        # Add goodness of fitting (mean score from cross-validation)
+        model = dict_logistic_result['logistic_reg_cv']
+        ind_C = np.where(model.Cs_ == model.C_)[0]  # Get the ind of best C 
+        score_mean = np.mean(model.scores_[1.0][:, ind_C], axis=0)
+        score_std = np.std(model.scores_[1.0][:, ind_C], axis=0)
+        df_session_logistic_regression.loc[
+                    0, f'logistic_{model_name}_score_mean'
+                ] = score_mean
+        df_session_logistic_regression.loc[
+                    0, f'logistic_{model_name}_score_std'
+                ] = score_std
+        
+        # Add raw betas from cross-validation
+        df_beta_cv = dict_logistic_result['df_beta']['cross_validation']
+        dict_df_beta[model_name] = pd.DataFrame([df_beta_cv], 
+                               columns=df_beta_cv.index)  # Turn to one row with multi-index columns
+        
+        
         dict_figures[model_name] = ax.figure
     
-    return df_session_logistic_regression, dict_figures
+    return df_session_logistic_regression, dict_figures, dict_df_beta
