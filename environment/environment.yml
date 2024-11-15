@@ -1,13 +1,12 @@
 environment_version: 1
 credentials:
-- type: api-key
-  id: lFfGnPxhgNHDzt
-  description: Code Ocean API
-  key: API_KEY
-  secret: API_SECRET
 - type: aws
   id: gOpJ18qIhCU57L
   description: amazon
   access_key_id: AWS_ACCESS_KEY_ID
   secret_access_key: AWS_SECRET_ACCESS_KEY
   region: AWS_DEFAULT_REGION
+- type: general
+  id: ldjEAh7ZikOQveK2
+  description: CODEOCEAN_API_SECRET_HAN
+  value: CUSTOM_KEY
