@@ -615,12 +615,12 @@ if __name__ == '__main__':
 
     if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
         to_debug = [
-          #  '726441_2024-10-17_09-31-33.nwb',  # Too few trials
+            '726441_2024-10-17_09-31-33.nwb',  # Too few trials
             '697929_2024-02-22_08-38-30.nwb', # coupled baiting first session example
-            #'713557_2024-03-01_08-50-40.nwb', # coupled well-trained example
-            #'703548_2024-03-01_08-51-32.nwb',   # uncoupled baiting well-trained example
-            #'714314_2024-04-10_14-38-52', # new nwb format starting from https://github.com/AllenNeuralDynamics/dynamic-foraging-task/pull/369
-            #'727456_2024-06-12_11-10-53',  # uncoupled no baiting
+            '713557_2024-03-01_08-50-40.nwb', # coupled well-trained example
+            '703548_2024-03-01_08-51-32.nwb',   # uncoupled baiting well-trained example
+            '714314_2024-04-10_14-38-52', # new nwb format starting from https://github.com/AllenNeuralDynamics/dynamic-foraging-task/pull/369
+            '727456_2024-06-12_11-10-53',  # uncoupled no baiting
         ]  
         nwb_file_names = [f for f in nwb_file_names if any(dd in f for dd in to_debug)]
             
