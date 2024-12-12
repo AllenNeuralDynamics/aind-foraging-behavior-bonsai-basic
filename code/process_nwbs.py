@@ -27,9 +27,11 @@ logger = logging.getLogger(__name__)
 def _get_block_starts(p_L, p_R):
     """Find the indices of block starts
     """
-    block_start_ind_left = np.where(np.hstack([True, np.diff(p_L) != 0]))[0]
-    block_start_ind_right = np.where(np.hstack([True, np.diff(p_R) != 0]))[0]
-    block_start_ind_effective = np.sort(np.unique(np.hstack([block_start_ind_left, block_start_ind_right])))
+    block_start_ind_left = np.where(np.diff(np.hstack([np.inf, p_L, np.inf])))[0].tolist()
+    block_start_ind_right = np.where(np.diff(np.hstack([np.inf, p_R, np.inf])))[0].tolist()
+    block_start_ind_effective = np.sort(
+        np.unique(np.hstack([block_start_ind_left, block_start_ind_right]))
+    )   
     return block_start_ind_left, block_start_ind_right, block_start_ind_effective
     
 
@@ -174,6 +176,7 @@ def compute_df_session_meta(nwb, df_trial):
     
     # Parse effective block
     block_start_left, block_start_right, block_start_effective = _get_block_starts(p_L, p_R)
+
     if 'uncoupled' not in nwb.protocol.lower():
         if not (len(block_start_left) == len(block_start_right) 
                 and all(block_start_left == block_start_right)):
@@ -609,11 +612,12 @@ if __name__ == '__main__':
 
     if if_debug_mode and not LOCAL_MANUAL_OVERRIDE:
         to_debug = [
-            '697929_2024-02-22_08-38-30.nwb', # coupled baiting first session example
-            '713557_2024-03-01_08-50-40.nwb', # coupled well-trained example
-            '703548_2024-03-01_08-51-32.nwb',   # uncoupled baiting well-trained example
-            '714314_2024-04-10_14-38-52', # new nwb format starting from https://github.com/AllenNeuralDynamics/dynamic-foraging-task/pull/369
-            '727456_2024-06-12_11-10-53',  # uncoupled no baiting
+            '726441_2024-10-17_09-31-33.nwb',
+            #'697929_2024-02-22_08-38-30.nwb', # coupled baiting first session example
+            #'713557_2024-03-01_08-50-40.nwb', # coupled well-trained example
+            #'703548_2024-03-01_08-51-32.nwb',   # uncoupled baiting well-trained example
+            #'714314_2024-04-10_14-38-52', # new nwb format starting from https://github.com/AllenNeuralDynamics/dynamic-foraging-task/pull/369
+            #'727456_2024-06-12_11-10-53',  # uncoupled no baiting
         ]  
         nwb_file_names = [f for f in nwb_file_names if any(dd in f for dd in to_debug)]
             
