@@ -131,9 +131,9 @@ def compute_df_session_meta(nwb, df_trial):
     subject_id_from_meta = nwb.subject.subject_id
     
     # old file name foramt before commit https://github.com/AllenNeuralDynamics/dynamic-foraging-task/commit/62d0e9e2bb9b47a8efe8ecb91da9653381a5f551
-    session_id = nwb.session_id.replace("behavior_", "")  # hot fix a bug https://github.com/AllenNeuralDynamics/aind-behavior-blog/issues/711#issuecomment-2539712354
+    nwb_session_id = nwb.session_id.replace("behavior_", "")  # hot fix a bug https://github.com/AllenNeuralDynamics/aind-behavior-blog/issues/711#issuecomment-2539712354
     old_re = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<n>\d+))?\.json", 
-                session_id)
+                nwb_session_id)
     
     if old_re is not None:
         # If there are more than one "bonsai sessions" (the trainer clicked "Save" button in the GUI more than once) in a certain day,
@@ -148,7 +148,7 @@ def compute_df_session_meta(nwb, df_trial):
         # "Save" button but only started the session once. 
         # Therefore, I should generate nwb_suffix from the bonsai file name instead of session_start_time.
         subject_id, session_date, session_json_time = re.match(r"(?P<subject_id>\d+)_(?P<date>\d{4}-\d{2}-\d{2})(?:_(?P<time>.*))\.json", 
-                            nwb.session_id).groups()
+                            nwb_session_id).groups()
         nwb_suffix = int(session_json_time.replace('-', ''))
         
     # Ad-hoc bug fixes for some mistyped mouse ID
