@@ -38,7 +38,10 @@ def compute_logistic_regression(nwb) -> Tuple[
                       df_trial.auto_waterR | df_trial.auto_waterL 
                       & (df_trial.animal_response != 2)
                       ).astype(int).values
-        
+    
+    if np.count_nonzero(~np.isnan(choice_history)) <= 20:
+        return None, None, None
+
     for model_name in MODEL_MAPPER.keys():
         # Do fitting
         dict_logistic_result = fit_logistic_regression(choice_history, reward_history,

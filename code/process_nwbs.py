@@ -513,28 +513,32 @@ def process_one_nwb(nwb_file_name, result_root):
         
         # --- 2. Logistic regression ---
         df_session_logistic_regression, dict_fig, dict_df_beta = compute_logistic_regression(nwb)
-        df_session_logistic_regression.index = df_session.index  # Make sure the session_key is the same as df_session
-        df_session_logistic_regression.columns = pd.MultiIndex.from_product(
-            [['logistic_regression'], 
-             df_session_logistic_regression.columns])
-        # Merge df_session_logistic_regression to df_session 
-        # (TODO: this should happen elsewhere, see https://github.com/orgs/AllenNeuralDynamics/projects/70/views/4?pane=issue&itemId=57992307)
-        df_session = pd.concat([df_session, df_session_logistic_regression], axis=1)
+        if df_session_logistic_regression is not None:
+            df_session_logistic_regression.index = df_session.index  # Make sure the session_key is the same as df_session
+            df_session_logistic_regression.columns = pd.MultiIndex.from_product(
+                [['logistic_regression'], 
+                df_session_logistic_regression.columns])
+            # Merge df_session_logistic_regression to df_session 
+            # (TODO: this should happen elsewhere, see https://github.com/orgs/AllenNeuralDynamics/projects/70/views/4?pane=issue&itemId=57992307)
+            df_session = pd.concat([df_session, df_session_logistic_regression], axis=1)
         
-        # -- Save model-specific figure and betas
-        for model, fig in dict_fig.items():
-            fig.savefig(result_folder + '/' + f'{session_id}_logistic_regression_{model}.png',
-                        bbox_inches='tight')
-            plt.close(fig)
-            
-            # df_beta
-            df_beta = dict_df_beta[model]  # df_beta for this model
-            df_beta.index = df_session.index  # Add session key
-            pd.to_pickle(df_beta, 
-                         result_folder + '/' + f'{session_id}_df_session_logistic_regression_df_beta_{model}.pkl')
-            
-        logger.info(f'{nwb_file_name} 2. Logistic regression done.')
-    
+            # -- Save model-specific figure and betas
+            for model, fig in dict_fig.items():
+                fig.savefig(result_folder + '/' + f'{session_id}_logistic_regression_{model}.png',
+                            bbox_inches='tight')
+                plt.close(fig)
+                
+                # df_beta
+                df_beta = dict_df_beta[model]  # df_beta for this model
+                df_beta.index = df_session.index  # Add session key
+                pd.to_pickle(df_beta, 
+                            result_folder + '/' + f'{session_id}_df_session_logistic_regression_df_beta_{model}.pkl')
+                
+            logger.info(f'{nwb_file_name} 2. Logistic regression done.')
+        else:
+            logger.warning(f'{nwb_file_name} 2. Logistic regression SKIPPED.')
+
+        
         # --- 3. Lick analysis ---
         try:
             fig, _ = plot_lick_analysis(nwb)
